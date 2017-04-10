@@ -1,8 +1,8 @@
 CC=gcc
 
-CFLAGS=`pkg-config gtk+-3.0 --cflags`
+CFLAGS=-g -O3 -ffast-math -Wall -pthread `pkg-config gtk+-3.0 --cflags`
 
-LDFLAGS=`pkg-config gtk+-3.0 --libs`
+LDFLAGS=`pkg-config gtk+-3.0 --libs` -lm -lrt 
 
 SRC = conduct.c
 
