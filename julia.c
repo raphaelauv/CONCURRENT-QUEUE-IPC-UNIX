@@ -242,6 +242,25 @@ button_callback(GtkWidget *widget, GdkEventButton *event)
 
 int main(int argc, char **argv)
 {
+
+
+	struct conduct *a = conduct_create("TOTO", 10,10);
+
+
+	if(a==NULL){
+		printf("FAIL\n");
+	}
+
+	int size=conduct_write(a,"tata",7);
+
+	printf("SIZE WRITE :%d\n",size);
+
+	char buff[400];
+	conduct_read(a,buff,5);
+	printf("DEDANS : %s\n",buff);
+
+
+	return 0;
     GtkWidget* canvas;
     struct twocons cons;
     int numthreads = 0;

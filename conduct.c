@@ -17,53 +17,31 @@ struct conduct{
 	void * mmap;
 };
 
-typedef struct custom_Mutex {
+struct content {
 	int var;
 	pthread_mutex_t mutex;
 	pthread_cond_t condition;
-} custom_Mutex;
 
-struct content {
 	char isEOF;
 	char isEmpty;
 	size_t start;
 	size_t end;
 	size_t max;
-	custom_Mutex * cmutex;
+
 	char * buffCircular;
 };
 
-int init_custom_Mutex(custom_Mutex * arg) {
-	if (arg != NULL) {
-		arg->mutex = (pthread_mutex_t )PTHREAD_MUTEX_INITIALIZER;
-		arg->condition = (pthread_cond_t )PTHREAD_COND_INITIALIZER;
-		arg->var = 0;
-	} else {
-		return -1;
-	}
-	return 0;
-}
 
-void clean_custom_Mutex(custom_Mutex * arg) {
-	if (arg != NULL) {
-		pthread_mutex_destroy(&arg->mutex);
-		pthread_cond_destroy(&arg->condition);
-		free(arg);
-		arg = NULL;
-	}
-}
 
 void clean_Content(struct content * cont) {
 	if (cont != NULL) {
-		clean_custom_Mutex(cont->cmutex);
-		free(cont);
-		cont = NULL;
+		pthread_mutex_destroy(&cont->mutex);
+		pthread_cond_destroy(&cont->condition);
 	}
 }
 
 void clean_Conduct(struct conduct * cond,int flag) {
 	if (cond != NULL) {
-
 
 		if (cond->mmap != MAP_FAILED) {
 			if(msync(cond->mmap,cond->c,MS_SYNC)){
@@ -87,8 +65,8 @@ void clean_Conduct(struct conduct * cond,int flag) {
 
 struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
-	struct content * cont;
-	struct conduct * cond;
+	struct content * cont=NULL;
+	struct conduct * cond=NULL;
 
 	cond = (struct conduct *) malloc(sizeof(struct conduct));
 	if (cond == NULL) {
@@ -99,10 +77,13 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	cond->a = a;
 	cond->fd = -1;
 
+	int sizeToMMAP=cond->c;
+	sizeToMMAP+=sizeof(struct content);
+
 	if (name != NULL) {
 
-		cond->modeMMAP = mode_ANONYMOUS;
-		cond->fd = shm_open(name, O_CREAT | O_RDWR | O_TRUNC, FILE_mode);
+		cond->modeMMAP = mode_NAMED;
+		cond->fd = open(name,O_CREAT | O_RDWR | O_TRUNC,FILE_mode);
 
 		if (cond->fd < 0) {
 			goto cleanup;
@@ -115,22 +96,25 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 			goto cleanup;
 		}
 
-		offset = cond->c;
-		pa_offset = offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
+
+		offset = sizeToMMAP;
+		//pa_offset = offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
 
 		if (offset >= sb.st_size) {
-			if (ftruncate(cond->fd, c)) {
+			if (ftruncate(cond->fd, sizeToMMAP)) {
 				goto cleanup;
 			}
+			/*
 			//TODO
 			close(cond->fd);
 			cond->fd = shm_open(name, O_CREAT | O_RDWR | O_TRUNC, FILE_mode);
 			if (cond->fd < 0) {
 				goto cleanup;
 			}
+			*/
 		}
 
-		cond->mmap = mmap(NULL, cond->c /*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
+		cond->mmap = mmap(NULL, sizeToMMAP/*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
 
 		if (cond->mmap == MAP_FAILED) {
 			goto cleanup;
@@ -138,9 +122,9 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 	} else {
 
-		cond->modeMMAP = mode_NAMED;
+		cond->modeMMAP = mode_ANONYMOUS;
 
-		cond->mmap = mmap( NULL, cond->c , PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+		cond->mmap = mmap( NULL, sizeToMMAP, PROT_READ|PROT_WRITE, MAP_ANONYMOUS, -1, 0);
 
 		if (cond->mmap == MAP_FAILED) {
 			goto cleanup;
@@ -148,20 +132,47 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 	}
 
+	printf("sizeMMAP : %d\n",sizeToMMAP);
+
 	cont = (struct content *) cond->mmap;
+	cont->mutex = (pthread_mutex_t )PTHREAD_MUTEX_INITIALIZER;
+	cont->condition = (pthread_cond_t )PTHREAD_COND_INITIALIZER;
+	cont->var = 0;
 
-	cont->cmutex = (custom_Mutex *) malloc(sizeof(custom_Mutex));
-	if (cont->cmutex == NULL) {
+	if(pthread_mutex_lock(&cont->mutex)){
 		goto cleanup;
-	}
-	init_custom_Mutex(cont->cmutex);
+	}else{
+		cont->isEmpty=1;
+		cont->isEOF=0;
+		cont->start=0;
+		cont->end=0;
+		cont->max=cond->c;
 
-	pthread_mutex_lock(&cont->cmutex->mutex);
-	cont->isEmpty=1;
-	pthread_mutex_unlock(&cont->cmutex->mutex);
+		printf("CONT  -> %p\n",cont);
+		printf("VAR   -> %p\n",&cont->var);
+
+		printf("BUFF  -> %p\n",cont->buffCircular);
+
+		cont->buffCircular=cont +sizeof(struct content);
+
+		printf("BUFF2 -> %p\n",cont->buffCircular);
+
+		cont->buffCircular[cont->max-1]=91;
+
+
+		if(pthread_mutex_unlock(&cont->mutex)){
+			goto cleanup;
+		}
+	}
+
+
+
+
+
 
 	//TODO
 
+	printf("FINI\n");
 	return cond;
 
 	cleanup:
@@ -192,15 +203,15 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 
 	struct content * ct=(struct content *)c->mmap;
 
-	pthread_mutex_lock(&ct->cmutex->mutex);
+	pthread_mutex_lock(&ct->mutex);
 
 	while (ct->isEmpty) {
 
 		if (ct->buffCircular[ct->start] == EOF) {
-			pthread_mutex_unlock(&ct->cmutex->mutex);
+			pthread_mutex_unlock(&ct->mutex);
 			return 0;
 		} else {
-			pthread_cond_wait(&ct->cmutex->condition, &ct->cmutex->mutex);
+			pthread_cond_wait(&ct->condition, &ct->mutex);
 			continue;
 		}
 
@@ -268,7 +279,7 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	}
 
 
-	pthread_mutex_unlock(&ct->cmutex->mutex);
+	pthread_mutex_unlock(&ct->mutex);
 	return sizeReallyRead;
 
 
@@ -286,23 +297,25 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
 
 	struct content * ct=(struct content *)c->mmap;
 
-	pthread_mutex_lock(&ct->cmutex->mutex);
-	if(ct->isEOF){
-		pthread_mutex_unlock(&ct->cmutex->mutex);
+
+
+	pthread_mutex_lock(&ct->mutex);
+	if(ct->isEOF && count !=1 && localBuf[0]!=EOF){//TODO
+		pthread_mutex_unlock(&ct->mutex);
 		errno=EPIPE;
 		return -1;
 	}else if(count ==1 && localBuf[0]==EOF){
 		while(ct->end==ct->start && !ct->isEmpty){
-			pthread_cond_wait(&ct->cmutex->condition, &ct->cmutex->mutex);
+			pthread_cond_wait(&ct->condition, &ct->mutex);
 		}
 		ct->buffCircular[ct->end]=EOF;
 		ct->end++;
 		ct->isEOF=1;
-		pthread_mutex_unlock(&ct->cmutex->mutex);
+		pthread_mutex_unlock(&ct->mutex);
 		return count;
 	}
 
-	pthread_mutex_unlock(&ct->cmutex->mutex);
+	pthread_mutex_unlock(&ct->mutex);
 
 	return  reallyWrite;
 
