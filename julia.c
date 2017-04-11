@@ -243,27 +243,37 @@ button_callback(GtkWidget *widget, GdkEventButton *event)
 int main(int argc, char **argv)
 {
 
-
 	struct conduct *a = conduct_create("TOTO", 10,10);
 
 	struct conduct *b = conduct_open("TATA");
 
 	struct conduct *c = conduct_open("TOTO");
 
-
-
 	if(a==NULL){
 		printf("FAIL\n");
 	}
 
-	/*
-	int size=conduct_write(a,"tata",7);
+
+	int size=conduct_write(a,"ABCDEFGIJK",10);
 
 	printf("SIZE WRITE :%d\n",size);
-	*/
+
 	char buff[400];
-	//conduct_read(a,buff,5);
+	conduct_read(c,buff,7);
 	printf("DEDANS : %s\n",buff);
+
+
+	char buffA[400];
+	conduct_read(c,buffA,7);
+	printf("DEDANS : %s\n",buffA);
+
+	size=conduct_write(a,"COCOCO",6);
+
+	printf("SIZE WRITE :%d\n",size);
+
+	char buff2[400];
+	conduct_read(c,buff2,9);
+	printf("DEDANS : %s\n",buff2);
 
 
 	return 0;
