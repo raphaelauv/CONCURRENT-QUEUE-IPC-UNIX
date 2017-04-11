@@ -1,19 +1,17 @@
 #include "conduct.h"
 
 #define FILE_mode 0666
-
 #define mode_ANONYMOUS 1
 #define mode_NAMED 2
-
 #define FLAG_CLEAN_DESTROY 1
 #define FLAG_CLEAN_CLOSE 2
 
-
 struct conduct{
 	char modeMMAP;
-	size_t c;
-	size_t a;
+	size_t c; //SIZE MAX PIPE
+	size_t a; //ATOMIC MIN SIZE
 	int fd;
+	int sizeMMAP;
 	void * mmap;
 };
 
@@ -22,13 +20,16 @@ struct content {
 	pthread_mutex_t mutex;
 	pthread_cond_t condition;
 
+	int sizeMMAP;
+	size_t sizeMax;
+	size_t sizeAtom;
+
 	char isEOF;
 	char isEmpty;
 	size_t start;
 	size_t end;
-	size_t max;
 
-	char * buffCircular;
+	char *buffCircular;
 };
 
 
@@ -44,13 +45,17 @@ void clean_Conduct(struct conduct * cond,int flag) {
 	if (cond != NULL) {
 
 		if (cond->mmap != MAP_FAILED) {
-			if(msync(cond->mmap,cond->c,MS_SYNC)){
+
+			if(msync(cond->mmap,cond->mmap,MS_SYNC)){
 				printf("ERROR msync()\n");
 			}
 
-			if(munmap(cond->mmap, cond->c)){
-				printf("ERROR munmap()\n");
+			if(flag==FLAG_CLEAN_DESTROY){
+				if (munmap(cond->mmap, cond->c)) {
+					printf("ERROR munmap()\n");
+				}
 			}
+
 		}
 
 
@@ -77,8 +82,9 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	cond->a = a;
 	cond->fd = -1;
 
-	int sizeToMMAP=cond->c;
-	sizeToMMAP+=sizeof(struct content);
+	cond->mmap=MAP_FAILED;
+	cond->sizeMMAP=cond->c;
+	cond->sizeMMAP+=sizeof(struct content);
 
 	if (name != NULL) {
 
@@ -97,11 +103,11 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		}
 
 
-		offset = sizeToMMAP;
+		offset = cond->sizeMMAP;
 		//pa_offset = offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
 
 		if (offset >= sb.st_size) {
-			if (ftruncate(cond->fd, sizeToMMAP)) {
+			if (ftruncate(cond->fd, cond->sizeMMAP)) {
 				goto cleanup;
 			}
 			/*
@@ -114,7 +120,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 			*/
 		}
 
-		cond->mmap = mmap(NULL, sizeToMMAP/*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
+		cond->mmap = mmap(NULL, cond->sizeMMAP/*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
 
 		if (cond->mmap == MAP_FAILED) {
 			goto cleanup;
@@ -123,16 +129,14 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	} else {
 
 		cond->modeMMAP = mode_ANONYMOUS;
-
-		cond->mmap = mmap( NULL, sizeToMMAP, PROT_READ|PROT_WRITE, MAP_ANONYMOUS, -1, 0);
-
+		cond->mmap = mmap( NULL, cond->sizeMMAP, PROT_READ|PROT_WRITE, MAP_ANONYMOUS, -1, 0);
 		if (cond->mmap == MAP_FAILED) {
 			goto cleanup;
 		}
 
 	}
 
-	printf("sizeMMAP : %d\n",sizeToMMAP);
+	printf("sizeMMAP : %d\n",cond->sizeMMAP);
 
 	cont = (struct content *) cond->mmap;
 	cont->mutex = (pthread_mutex_t )PTHREAD_MUTEX_INITIALIZER;
@@ -146,33 +150,35 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		cont->isEOF=0;
 		cont->start=0;
 		cont->end=0;
-		cont->max=cond->c;
+		cont->sizeMax=cond->c;
+		cont->sizeAtom=cond->a;
+		cont->sizeMMAP=cond->sizeMMAP;
 
+		/*
 		printf("CONT  -> %p\n",cont);
 		printf("VAR   -> %p\n",&cont->var);
-
 		printf("BUFF  -> %p\n",cont->buffCircular);
+		*/
 
-		cont->buffCircular=cont +sizeof(struct content);
+		int decalage=(sizeof(struct content));
+		cont->buffCircular=(void *)cont + decalage ;
 
-		printf("BUFF2 -> %p\n",cont->buffCircular);
+		//printf("BUFF2 -> %p\n",cont->buffCircular);
 
-		cont->buffCircular[cont->max-1]=91;
-
+		/*
+		for(int i=0;i<cond->c;i++ ){
+			cont->buffCircular[i]='G';
+		}
+		*/
 
 		if(pthread_mutex_unlock(&cont->mutex)){
 			goto cleanup;
 		}
+
+		//msync(cond->mmap,cond->sizeMMAP,MS_SYNC);
 	}
 
-
-
-
-
-
-	//TODO
-
-	printf("FINI\n");
+	//printf("FINI\n");
 	return cond;
 
 	cleanup:
@@ -183,15 +189,56 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 }
 struct conduct *conduct_open(const char *name) {
 
-	struct conduct * cond;
 
-	cond = (struct conduct *) malloc(sizeof(struct conduct));
-	if (cond == NULL) {
+	if(name==NULL){
 		return NULL;
 	}
 
-	//TODO
+	struct conduct * cond = (struct conduct *) malloc(sizeof(struct conduct));
+	struct content * cont=NULL;
+	if (cond == NULL) {
+		return NULL;
+	}
+	cond->mmap=MAP_FAILED;
+	cond->modeMMAP = mode_NAMED;
+	cond->fd = open(name, O_RDWR ,FILE_mode);
+
+	if (cond->fd < 0) {
+		goto cleanup;
+	}
+
+	struct stat sb;
+
+	if (fstat(cond->fd, &sb) == -1){
+		goto cleanup;
+	}
+
+	cond->sizeMMAP=sb.st_size;
+
+
+	cond->mmap = mmap(NULL, cond->sizeMMAP/*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
+
+	if (cond->mmap == MAP_FAILED) {
+		goto cleanup;
+	}
+
+	cont = (struct content *) cond->mmap;
+
+	cond->c = cont->sizeMax;
+	cond->a = cont->sizeAtom;
+	cond->sizeMMAP = cont->sizeMMAP;
+
+	printf("SIZE MMAP DANS OPEN : %d\n",cond->sizeMMAP);
+
+
 	return cond;
+
+
+	cleanup:
+		clean_Conduct(cond,FLAG_CLEAN_CLOSE);
+		return NULL;
+
+
 
 }
 ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
@@ -227,13 +274,13 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	} else {
 
 		if (ct->start == ct->end) {
-			if(ct->end!=ct->max){
+			if(ct->end!=c->c){
 				passByMiddle=1;
 			}
-			sizeAvailable = ct->max;
+			sizeAvailable = c->c;
 		}else{
 			passByMiddle=1;
-			sizeAvailable = ct->max - ct->start + ct->end;
+			sizeAvailable = c->c - ct->start + ct->end;
 		}
 	}
 
@@ -248,8 +295,8 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	char tmp;
 	size_t firstMaxFor;
 	size_t secondMaxFor;
-	if(passByMiddle && sizeToRead> ct->max - ct->start){
-		firstMaxFor=ct->max;
+	if(passByMiddle && sizeToRead> c->c - ct->start){
+		firstMaxFor=c->c;
 	}else{
 		firstMaxFor=ct->start + sizeToRead;
 	}
