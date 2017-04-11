@@ -38,14 +38,14 @@ struct content {
 
 
 
-void clean_Content(struct content * cont) {
+extern inline void clean_Content(struct content * cont) {
 	if (cont != NULL) {
 		pthread_mutex_destroy(&cont->mutex);
 		pthread_cond_destroy(&cont->condition);
 	}
 }
 
-int clean_Conduct(struct conduct * cond,int flag) {
+extern inline int clean_Conduct(struct conduct * cond,int flag) {
 
 	int error=0;
 	if (cond != NULL) {
@@ -71,7 +71,7 @@ int clean_Conduct(struct conduct * cond,int flag) {
 			}
 		}
 
-		if (flag == FLAG_CLEAN_DESTROY) {
+		if (flag == FLAG_CLEAN_DESTROY && cond->modeMMAP==mode_NAMED) {
 			if (unlink(cond->fileName)) {
 				error=1;
 			}
@@ -124,14 +124,15 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 			if (ftruncate(cond->fd, cond->sizeMMAP)) {
 				goto cleanup;
 			}
+
 			/*
-			//TODO
 			close(cond->fd);
-			cond->fd = shm_open(name, O_CREAT | O_RDWR | O_TRUNC, FILE_mode);
+			cond->fd = open(name, O_RDWR | O_TRUNC,FILE_mode);
 			if (cond->fd < 0) {
 				goto cleanup;
 			}
 			*/
+
 		}
 
 		cond->mmap = mmap(NULL, cond->sizeMMAP/*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
@@ -143,7 +144,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	} else {
 
 		cond->modeMMAP = mode_ANONYMOUS;
-		cond->mmap = mmap( NULL, cond->sizeMMAP, PROT_READ|PROT_WRITE, MAP_ANONYMOUS, -1, 0);
+		cond->mmap = mmap( NULL, cond->sizeMMAP, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 		if (cond->mmap == MAP_FAILED) {
 			goto cleanup;
 		}
@@ -260,7 +261,7 @@ struct conduct *conduct_open(const char *name) {
 
 }
 
-void evalDATAinBUFF(struct content * ct,size_t *sizeAvailable, char * passByMiddle,int flag) {
+extern inline void evalDATAinBUFF(struct content * ct,size_t *sizeAvailable, char * passByMiddle,int flag) {
 
 	if(ct->isEmpty){
 
@@ -321,33 +322,36 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 
 	struct content * ct=(struct content *)c->mmap;
 
-	pthread_mutex_lock(&ct->mutex);
+	size_t sizeAvailable = 0;
+	char passByMiddle = 0;
+	size_t firstMaxFor = 0;
+	size_t secondMaxFor = 0;
+	ssize_t sizeReallyRead = 0;
+	size_t sizeToRead = 0;
+	size_t i = 0;
+
+	if(pthread_mutex_lock(&ct->mutex)){
+		return -1;
+	}
 
 	while (ct->isEmpty) {
-
 		if (ct->buffCircular[ct->start] == EOF) {
 			pthread_mutex_unlock(&ct->mutex);
 			return 0;
 		} else {
 			pthread_cond_wait(&ct->condition, &ct->mutex);
-			continue;
 		}
-
 	}
-	size_t sizeAvailable=0;
-	char passByMiddle=0;
 
 	evalDATAinBUFF(ct,&sizeAvailable,&passByMiddle,FLAG_READ);
-
 	while(sizeAvailable<1){
 		pthread_cond_wait(&ct->condition, &ct->mutex);
 		evalDATAinBUFF(ct,&sizeAvailable,&passByMiddle,FLAG_READ);
 	}
 
-
 	printf("in read passbyMille = %d\n",passByMiddle);
 
-	size_t sizeToRead;
+
 	if (count >c->a) {
 		sizeToRead = c->a;
 	}else{
@@ -359,10 +363,6 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	}
 
 
-	size_t firstMaxFor=0;
-	size_t secondMaxFor=0;
-
-
 	if(passByMiddle && (ct->start+sizeToRead )>ct->sizeMax){
 		firstMaxFor=ct->sizeMax;
 		secondMaxFor= sizeToRead - (ct->sizeMax - ct->start);
@@ -370,10 +370,9 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 		firstMaxFor=ct->start + sizeToRead;
 	}
 
-	ssize_t sizeReallyRead = 0;
 	int EOFfind=0;
 	char tmp;
-	for (size_t i = ct->start; i < firstMaxFor; i++) {
+	for (i = ct->start; i < firstMaxFor; i++) {
 		tmp = ct->buffCircular[i];
 		if (tmp == EOF) {
 			EOFfind=1;
@@ -387,7 +386,7 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 
 	if(passByMiddle && !EOFfind){
 		ct->start=0;
-		for (size_t i = 0; i < secondMaxFor; i++) {
+		for (i = 0; i < secondMaxFor; i++) {
 			tmp = ct->buffCircular[i];
 			if (tmp == EOF) {
 				EOFfind=1;
@@ -423,47 +422,61 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
 
 	char * localBuf =(char *)buf;
 
-	ssize_t  reallyWrite;
-
 	struct content * ct=(struct content *)c->mmap;
 
-	pthread_mutex_lock(&ct->mutex);
-	if(ct->isEOF){
-		pthread_mutex_unlock(&ct->mutex);
-		errno=EPIPE;
+	size_t sizeToWrite = 0;
+	size_t sizeAvailable = 0;
+	char passByMiddle = 0;
+	size_t firstMaxFor = 0;
+	size_t secondMaxFor = 0;
+	ssize_t sizeReallyWrite = 0;
+	size_t i = 0;
+
+	if(pthread_mutex_lock(&ct->mutex)){
+		//TODO
 		return -1;
-	}else if(count ==1 && localBuf[0]==EOF){
-		while(ct->end==ct->start && !ct->isEmpty){
-			pthread_cond_wait(&ct->condition, &ct->mutex);
-		}
-		ct->buffCircular[ct->end]=EOF;
-		ct->end++;
-		ct->isEOF=1;
-		pthread_mutex_unlock(&ct->mutex);
-		return count;
 	}
 
+	if (ct->isEOF) {
+		pthread_mutex_unlock(&ct->mutex);
+		errno = EPIPE;
+		return -1;
+	}
 
-	size_t sizeToWrite=0;
 	if(count>c->a){
 		sizeToWrite=c->a;
 	}else{
 		sizeToWrite=count;
 	}
 
-	size_t sizeAvailable=0;
-	char passByMiddle=0;
-
 	evalDATAinBUFF(ct,&sizeAvailable,&passByMiddle,FLAG_WRITE);
-	while(sizeToWrite>sizeAvailable){
-		pthread_cond_wait(&ct->condition, &ct->mutex);
+
+	while((ct->end==ct->start && !ct->isEmpty) || sizeToWrite>sizeAvailable){
+		//buffer is FULL for the moment
+		//or there is not sufisant place
+		if(pthread_cond_wait(&ct->condition, &ct->mutex)){
+			return -1;
+		}
+
+		if (ct->isEOF) {
+			pthread_mutex_unlock(&ct->mutex);
+			errno = EPIPE;
+			return -1;
+		}
+
 		evalDATAinBUFF(ct,&sizeAvailable,&passByMiddle,FLAG_WRITE);
+	}
+
+	if (count == 1 && localBuf[0] == EOF) {
+		ct->buffCircular[ct->end] = EOF;
+		ct->end++;
+		ct->isEOF = 1;
+		pthread_mutex_unlock(&ct->mutex);
+		return count;
 	}
 
 	printf("in write passbyMille = %d\n",passByMiddle);
 
-	size_t firstMaxFor;
-	size_t secondMaxFor;
 
 	if(passByMiddle && (sizeToWrite > (c->c - ct->start))){
 		firstMaxFor=c->c;
@@ -471,16 +484,12 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
 		firstMaxFor=ct->start + sizeToWrite;
 	}
 
-	ssize_t sizeReallyWrite = 0;
-
-	for (size_t i = ct->start; i < firstMaxFor; i++) {
+	for ( i = ct->start; i < firstMaxFor; i++) {
 
 		ct->buffCircular[i]=localBuf[sizeReallyWrite];
 		sizeReallyWrite++;
 		ct->end++;
 	}
-
-
 
 	if(passByMiddle){
 		if(ct->end!=ct->sizeMax){
@@ -488,7 +497,7 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
 		}
 
 		ct->end=0;
-		for (size_t i = 0; i < secondMaxFor; i++) {
+		for ( i = 0; i < secondMaxFor; i++) {
 			ct->buffCircular[i]=localBuf[sizeReallyWrite];
 			sizeReallyWrite++;
 			ct->end++;
@@ -515,8 +524,8 @@ int conduct_write_eof(struct conduct *c) {
 	int result;
 	size_t size=1;
 	result = conduct_write(c,&tmp,size);
-	if(result==-1 && errno==EPIPE){
-		return 0;//EOF is already write
+	if(result==-1 && errno==EPIPE  || result==1){
+		return 0;//EOF is already write , or just been write
 	}
 	return result;
 

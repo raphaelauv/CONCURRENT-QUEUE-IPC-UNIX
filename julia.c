@@ -254,16 +254,15 @@ int main(int argc, char **argv)
 	}
 
 
-	int size=conduct_write(a,"ABCDEFGIJK",10);
+	int size=conduct_write(a,"ABCDEFGIJK",9);
 
 	printf("SIZE WRITE :%d\n",size);
 
-	char buff[400];
+	char buff[7];
 	conduct_read(c,buff,7);
 	printf("DEDANS : %s\n",buff);
 
-
-	char buffA[400];
+	char buffA[7];
 	conduct_read(c,buffA,7);
 	printf("DEDANS : %s\n",buffA);
 
@@ -271,7 +270,9 @@ int main(int argc, char **argv)
 
 	printf("SIZE WRITE :%d\n",size);
 
-	char buff2[400];
+	size=conduct_write(a,"ZZ",2);
+
+	char buff2[9];
 	conduct_read(c,buff2,9);
 	printf("DEDANS : %s\n",buff2);
 
