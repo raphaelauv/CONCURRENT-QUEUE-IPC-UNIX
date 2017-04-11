@@ -21,13 +21,7 @@
 
 struct content;
 
-struct conduct{
-	char modeMMAP;
-	size_t c;
-	size_t a;
-	int fd;
-	void * mmap;
-};
+struct conduct;
 
 struct conduct *conduct_create(const char *name, size_t a, size_t c);
 struct conduct *conduct_open(const char *name);

@@ -8,6 +8,15 @@
 #define FLAG_CLEAN_DESTROY 1
 #define FLAG_CLEAN_CLOSE 2
 
+
+struct conduct{
+	char modeMMAP;
+	size_t c;
+	size_t a;
+	int fd;
+	void * mmap;
+};
+
 typedef struct custom_Mutex {
 	int var;
 	pthread_mutex_t mutex;
@@ -15,6 +24,7 @@ typedef struct custom_Mutex {
 } custom_Mutex;
 
 struct content {
+	char isEOF;
 	char isEmpty;
 	size_t start;
 	size_t end;
@@ -174,7 +184,7 @@ struct conduct *conduct_open(const char *name) {
 
 }
 ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
-	if (c == NULL) {
+	if (c == NULL || buf==NULL) {
 		return -1;
 	}
 
@@ -268,9 +278,31 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
 		return -1;
 	}
 
+	//if (buf==NULL) {return -1;} FEATURE
+
+	char * localBuf =(char *)buf;
+
 	ssize_t  reallyWrite;
 
-	//TODO
+	struct content * ct=(struct content *)c->mmap;
+
+	pthread_mutex_lock(&ct->cmutex->mutex);
+	if(ct->isEOF){
+		pthread_mutex_unlock(&ct->cmutex->mutex);
+		errno=EPIPE;
+		return -1;
+	}else if(count ==1 && localBuf[0]==EOF){
+		while(ct->end==ct->start && !ct->isEmpty){
+			pthread_cond_wait(&ct->cmutex->condition, &ct->cmutex->mutex);
+		}
+		ct->buffCircular[ct->end]=EOF;
+		ct->end++;
+		ct->isEOF=1;
+		pthread_mutex_unlock(&ct->cmutex->mutex);
+		return count;
+	}
+
+	pthread_mutex_unlock(&ct->cmutex->mutex);
 
 	return  reallyWrite;
 
@@ -280,9 +312,14 @@ int conduct_write_eof(struct conduct *c) {
 		return -1;
 	}
 
-	//TODO
-
-	return 0;
+	char tmp=EOF;
+	int result;
+	size_t size=1;
+	result = conduct_write(c,&tmp,size);
+	if(result==-1 && errno==EPIPE){
+		return 0;
+	}
+	return result;
 
 }
 void conduct_close(struct conduct *conduct) {
