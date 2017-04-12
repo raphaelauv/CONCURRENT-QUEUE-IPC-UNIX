@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -19,5 +20,8 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count);
 int conduct_write_eof(struct conduct *c);
 void conduct_close(struct conduct *conduct);
 void conduct_destroy(struct conduct *conduct);
+
+
+int conduct_show(struct conduct *c);
 
 #endif /* CONDUCT_H_ */

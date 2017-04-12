@@ -176,6 +176,8 @@ paintit(struct twocons *cons, cairo_t *cr, int repcount)
 gboolean
 draw_callback (GtkWidget *widget, cairo_t *cr, gpointer data)
 {
+
+
     struct twocons *cons = (struct twocons*)data;
     double x1, y1, x2, y2;
     int repcount = 0;
@@ -185,6 +187,7 @@ draw_callback (GtkWidget *widget, cairo_t *cr, gpointer data)
     cairo_clip_extents(cr, &x1, &y1, &x2, &y2);
 
     clock_gettime(CLOCK_MONOTONIC, &t0);
+
 
     for(int j = y1; j <= y2; j++) {
         for(int i = x1; i <= x2; i += COUNT) {
@@ -207,8 +210,10 @@ draw_callback (GtkWidget *widget, cairo_t *cr, gpointer data)
             }
         }
     }
+
     /* On vide ce qui reste dans les canaux. */
     paintit(cons, cr, repcount);
+
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
@@ -243,7 +248,7 @@ button_callback(GtkWidget *widget, GdkEventButton *event)
 int main(int argc, char **argv)
 {
 
-	struct conduct *a = conduct_create("TOTO", 10,10);
+	struct conduct *a = conduct_create("TOTO", 5,10);
 
 	struct conduct *b = conduct_open("TATA");
 
@@ -253,17 +258,20 @@ int main(int argc, char **argv)
 		printf("FAIL\n");
 	}
 
-	int size=conduct_write(a,"ABCDEFGHIJK",9);
+	int size=conduct_write(a,"ABCDEFGHIJK",6);
+	conduct_show(c);
 
-	printf("SIZE WRITE :%d\n",size);
+	//printf("SIZE WRITE :%d\n",size);
 
-	size=conduct_write(a,"ABCDEFGIJK",1);
+	size=conduct_write(a,"ABCDEFGIJK",4);
+	conduct_show(c);
 
-	printf("SIZE WRITE :%d\n",size);
+	//printf("SIZE WRITE :%d\n",size);
 
 	char buff[11]={0};
 	conduct_read(a,buff,10);
 	printf("\nDEDANS : %s\n\n",buff);
+	conduct_show(c);
 
 	/*
 	char buffA[7];
@@ -271,17 +279,33 @@ int main(int argc, char **argv)
 	printf("DEDANS : %s\n",buffA);
 	 */
 	size=conduct_write(a,"COCOCO",6);
+	conduct_show(c);
 
-	printf("SIZE WRITE :%d\n",size);
+
+	//printf("SIZE WRITE :%d\n",size);
 
 	//size=conduct_write(a,"ZZ",2);
 
 	char buff2[11]={0};
 	conduct_read(c,buff2,10);
 	printf("\nDEDANS : %s\n\n",buff2);
+	conduct_show(c);
 
+	size=conduct_write(a,"COCOCO",6);
+	conduct_show(c);
 
-	return 0;
+	char buff3[11]={0};
+	conduct_read(c,buff3,10);
+	printf("\nDEDANS : %s\n\n",buff3);
+
+	conduct_show(c);
+
+	char buff4[11]={0};
+	conduct_read(c,buff4,10);
+	printf("\nDEDANS : %s\n\n",buff4);
+	conduct_show(c);
+
+	//return 0;
     GtkWidget* canvas;
     struct twocons cons;
     int numthreads = 0;
@@ -356,13 +380,13 @@ int main(int argc, char **argv)
         pthread_detach(t);
     }
 
+
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(canvas, "draw", G_CALLBACK(draw_callback), &cons);
     g_signal_connect(window, "button_press_event",
                      G_CALLBACK(button_callback), NULL);
     set_title();
     gtk_widget_show_all(window);
-
     gtk_main();
 
     return 0;
