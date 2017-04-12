@@ -253,28 +253,32 @@ int main(int argc, char **argv)
 		printf("FAIL\n");
 	}
 
-
-	int size=conduct_write(a,"ABCDEFGIJK",9);
+	int size=conduct_write(a,"ABCDEFGHIJK",9);
 
 	printf("SIZE WRITE :%d\n",size);
 
-	char buff[7];
-	conduct_read(c,buff,7);
-	printf("DEDANS : %s\n",buff);
+	size=conduct_write(a,"ABCDEFGIJK",1);
 
+	printf("SIZE WRITE :%d\n",size);
+
+	char buff[11]={0};
+	conduct_read(a,buff,10);
+	printf("\nDEDANS : %s\n\n",buff);
+
+	/*
 	char buffA[7];
 	conduct_read(c,buffA,7);
 	printf("DEDANS : %s\n",buffA);
-
+	 */
 	size=conduct_write(a,"COCOCO",6);
 
 	printf("SIZE WRITE :%d\n",size);
 
-	size=conduct_write(a,"ZZ",2);
+	//size=conduct_write(a,"ZZ",2);
 
-	char buff2[9];
-	conduct_read(c,buff2,9);
-	printf("DEDANS : %s\n",buff2);
+	char buff2[11]={0};
+	conduct_read(c,buff2,10);
+	printf("\nDEDANS : %s\n\n",buff2);
 
 
 	return 0;
