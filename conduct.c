@@ -1,8 +1,15 @@
+/*
+ *
+ * Read , read from start to end
+ *
+ * Write , write from end to start
+ *
+ */
+
 #include "conduct.h"
 
 #define FILE_mode 0666
-#define mode_ANONYMOUS 1
-#define mode_NAMED 2
+
 #define FLAG_CLEAN_DESTROY 1
 #define FLAG_CLEAN_CLOSE 2
 
@@ -13,6 +20,7 @@
 
 struct dataCirularBuffer{
 	char passByMiddle;
+	size_t count;
 	size_t sizeAvailable;
 	size_t firstMaxFor;
 	size_t secondMaxFor;
@@ -22,9 +30,9 @@ struct dataCirularBuffer{
 
 
 struct conduct{
-	char * fileName;
 	int fd;
-	int sizeMMAP;
+	int size_mmap;
+	char * fileName;
 	void * mmap;
 };
 
@@ -33,7 +41,7 @@ struct content {
 	pthread_mutex_t mutex;
 	pthread_cond_t condition;
 
-	int sizeMMAP;
+	int size_mmap;
 	size_t sizeMax;
 	size_t sizeAtom;
 
@@ -61,13 +69,13 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 
 		if (cond->mmap != MAP_FAILED) {
 
-			if(msync(cond->mmap,cond->sizeMMAP,MS_SYNC)){
+			if(msync(cond->mmap,cond->size_mmap,MS_SYNC)){
 				printf("ERROR msync()\n");
 				error=1;
 			}
 
 			if(flag==FLAG_CLEAN_DESTROY){
-				if (munmap(cond->mmap, cond->sizeMMAP)) {
+				if (munmap(cond->mmap, cond->size_mmap)) {
 					error=1;
 					printf("ERROR munmap()\n");
 				}
@@ -114,28 +122,29 @@ extern inline int copyFileName(const char * fileName ,struct conduct * cond){
 
 struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
-	struct content * cont=NULL;
-	struct conduct * cond=NULL;
+	struct content * cont = NULL;
+	struct conduct * cond = NULL;
 
 	cond = (struct conduct *) malloc(sizeof(struct conduct));
 
 	if (cond == NULL) {
+		errno = EINVAL;
 		return NULL;
 	}
 
 	cond->fd = -1;
-	cond->fileName=NULL;
-	cond->mmap=MAP_FAILED;
-	cond->sizeMMAP=c;
-	cond->sizeMMAP+=sizeof(struct content);
+	cond->fileName = NULL;
+	cond->mmap = MAP_FAILED;
+	cond->size_mmap = c;
+	cond->size_mmap += sizeof(struct content);
 
 	if (name != NULL) {
 		cond->fileName = malloc(sizeof(char) * MAXIMUM_SIZE_NAME_CONDUCT);
 		if(copyFileName(name,cond)){
-			errno=ENAMETOOLONG;
+			errno = ENAMETOOLONG;
 			goto cleanup;
 		}
-		//cond->modeMMAP = mode_NAMED;
+
 		cond->fd = open(name,O_CREAT | O_RDWR | O_TRUNC,FILE_mode);
 
 		if (cond->fd < 0) {
@@ -150,11 +159,11 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		}
 
 
-		offset = cond->sizeMMAP;
+		offset = cond->size_mmap;
 		//pa_offset = offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
 
 		if (offset >= sb.st_size) {
-			if (ftruncate(cond->fd, cond->sizeMMAP)) {
+			if (ftruncate(cond->fd, cond->size_mmap)) {
 				goto cleanup;
 			}
 
@@ -168,7 +177,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 		}
 
-		cond->mmap = mmap(NULL, cond->sizeMMAP/*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
+		cond->mmap = mmap(NULL, cond->size_mmap/*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
 
 		if (cond->mmap == MAP_FAILED) {
 			goto cleanup;
@@ -176,15 +185,15 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 	} else {
 
-		//cond->modeMMAP = mode_ANONYMOUS;
-		cond->mmap = mmap( NULL, cond->sizeMMAP, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+
+		cond->mmap = mmap( NULL, cond->size_mmap, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 		if (cond->mmap == MAP_FAILED) {
 			goto cleanup;
 		}
 
 	}
 
-	printf("sizeMMAP : %d\n",cond->sizeMMAP);
+	printf("sizeMMAP : %d\n",cond->size_mmap);
 
 	cont = (struct content *) cond->mmap;
 	cont->mutex = (pthread_mutex_t )PTHREAD_MUTEX_INITIALIZER;
@@ -192,6 +201,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	cont->var = 0;
 
 	if(pthread_mutex_lock(&cont->mutex)){
+		errno = ENOLCK;
 		goto cleanup;
 	}else{
 		cont->isEmpty=1;
@@ -200,7 +210,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		cont->end=0;
 		cont->sizeMax=c;
 		cont->sizeAtom=a;
-		cont->sizeMMAP=cond->sizeMMAP;
+		cont->size_mmap=cond->size_mmap;
 
 		/*
 		printf("CONT  -> %p\n",cont);
@@ -226,7 +236,6 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		//msync(cond->mmap,cond->sizeMMAP,MS_SYNC);
 	}
 
-	//printf("FINI\n");
 	return cond;
 
 	cleanup:
@@ -249,7 +258,6 @@ struct conduct *conduct_open(const char *name) {
 	}
 
 	cond->mmap=MAP_FAILED;
-	//cond->modeMMAP = mode_NAMED;
 
 	cond->fd = open(name, O_RDWR ,FILE_mode);
 	if (cond->fd < 0) {
@@ -261,8 +269,8 @@ struct conduct *conduct_open(const char *name) {
 		goto cleanup;
 	}
 
-	cond->sizeMMAP=sb.st_size;
-	cond->mmap = mmap(NULL, cond->sizeMMAP/*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
+	cond->size_mmap=sb.st_size;
+	cond->mmap = mmap(NULL, cond->size_mmap/*TODO*/ , PROT_WRITE | PROT_READ,MAP_SHARED, cond->fd, 0);
 	if (cond->mmap == MAP_FAILED) {
 		goto cleanup;
 	}
@@ -270,16 +278,17 @@ struct conduct *conduct_open(const char *name) {
 	cont = (struct content *) cond->mmap;
 
 	if (pthread_mutex_lock(&cont->mutex)) {
+		errno=ENOLCK;
 		goto cleanup;
 	} else {
-		cond->sizeMMAP = cont->sizeMMAP;
+		cond->size_mmap = cont->size_mmap;
 
 		if (pthread_mutex_unlock(&cont->mutex)) {
 			goto cleanup;
 		}
 	}
 
-	printf("SIZE MMAP DANS OPEN : %d\n",cond->sizeMMAP);
+	printf("SIZE MMAP DANS OPEN : %d\n",cond->size_mmap);
 
 	return cond;
 
@@ -324,6 +333,26 @@ extern inline void eval_limit_loops(struct content * ct,struct dataCirularBuffer
 }
 
 extern inline void eval_size_to_manipulate(struct content * ct,struct dataCirularBuffer * data,int flag) {
+
+
+	if (data->count >ct->sizeAtom) {
+		data->sizeToManipulate = ct->sizeAtom;
+
+		if(flag==FLAG_WRITE){
+			return;
+		}
+	}else{
+		if(flag==FLAG_WRITE){
+			data->sizeToManipulate = data->count;
+			return;
+		}
+		data->sizeToManipulate=data->count;
+
+	}
+
+	if(data->sizeToManipulate>data->sizeAvailable){
+		data->sizeToManipulate = data->sizeAvailable;
+	}
 
 }
 
@@ -388,18 +417,18 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 
 ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	if (c == NULL || buf==NULL) {
+		errno=EINVAL;
 		return -1;
 	}
 
-	char * localBuf =(char *)buf;
-
-	struct content * ct=(struct content *)c->mmap;
-
-	struct dataCirularBuffer data={0};
-
+	char * localBuf = (char *) buf;
+	struct content * ct = (struct content *) c->mmap;
+	struct dataCirularBuffer data = { 0 };
 	size_t i;
+	data.count = count;
 
 	if(pthread_mutex_lock(&ct->mutex)){
+		errno=ENOLCK;
 		return -1;
 	}
 
@@ -419,6 +448,9 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	}
 
 	printf("in read passbyMille = %d\n",data.passByMiddle);
+
+
+	//eval_size_to_manipulate(ct,&data,FLAG_READ); TODO
 
 
 	if (count >ct->sizeAtom) {
@@ -493,21 +525,20 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 }
 ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
 	if (c == NULL || count==0) {
+		errno=EINVAL;
 		return -1;
 	}
 
 	//if (buf==NULL) {return -1;} FEATURE
 
-	char * localBuf =(char *)buf;
-
-	struct content * ct=(struct content *)c->mmap;
-
-	struct dataCirularBuffer data={0};
-
+	char * localBuf = (char *) buf;
+	struct content * ct = (struct content *) c->mmap;
+	struct dataCirularBuffer data = { 0 };
 	size_t i = 0;
+	data.count = count;
 
 	if(pthread_mutex_lock(&ct->mutex)){
-		//TODO
+		errno=ENOLCK;
 		return -1;
 	}
 
@@ -517,17 +548,12 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
 		return -1;
 	}
 
-	if(count>ct->sizeAtom){
-		data.sizeToManipulate=ct->sizeAtom;
-	}else{
-		data.sizeToManipulate=count;
-	}
+	eval_size_to_manipulate(ct,&data,FLAG_WRITE);
 
 	eval_position_and_size_of_data(ct,&data,FLAG_WRITE);
 
 	while((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
-		//buffer is FULL for the moment
-		//or there is not sufisant place
+		//buffer is FULL for the moment or there is not sufisant place
 		if(pthread_cond_wait(&ct->condition, &ct->mutex)){
 			return -1;
 		}
@@ -603,10 +629,11 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
 
 int conduct_write_eof(struct conduct *c) {
 	if (c == NULL) {
+		errno = EINVAL;
 		return -1;
 	}
 
-	char tmp=EOF;
+	char tmp = EOF;//TODO
 	int result;
 	size_t size=1;
 	result = conduct_write(c,&tmp,size);
@@ -617,9 +644,9 @@ int conduct_write_eof(struct conduct *c) {
 
 }
 void conduct_close(struct conduct *conduct) {
-	clean_Conduct(conduct,FLAG_CLEAN_CLOSE);
+	clean_Conduct(conduct, FLAG_CLEAN_CLOSE);
 }
 void conduct_destroy(struct conduct *conduct) {
-	clean_Conduct(conduct,FLAG_CLEAN_DESTROY);
+	clean_Conduct(conduct, FLAG_CLEAN_DESTROY);
 }
 

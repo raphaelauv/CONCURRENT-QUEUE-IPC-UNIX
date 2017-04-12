@@ -1,25 +1,14 @@
 #ifndef CONDUCT_H_
 #define CONDUCT_H
 
-#include <dirent.h>
 #include <errno.h>
-#include <string.h>
 #include <fcntl.h>
-#include <math.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <sys/types.h>
-#include <semaphore.h>
-#include <time.h>
 #include <unistd.h>
-
-#define MALERROR
-
-struct content;
 
 struct conduct;
 
