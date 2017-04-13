@@ -245,6 +245,7 @@ button_callback(GtkWidget *widget, GdkEventButton *event)
     return TRUE;
 }
 
+/*
 int main(int argc, char **argv)
 {
 
@@ -282,11 +283,7 @@ int main(int argc, char **argv)
 	printf("\nDEDANS : %s\n\n",buff);
 	conduct_show(c);
 
-	/*
-	char buffA[7];
-	conduct_read(c,buffA,7);
-	printf("DEDANS : %s\n",buffA);
-	 */
+
 	size=conduct_write(a,"COCOCO",6);
 	conduct_show(c);
 
@@ -386,7 +383,7 @@ int main(int argc, char **argv)
             perror("pthread_create");
             exit(1);
         }
-        /* On se synchronise à l'aide des conduits, pas besoin de join. */
+
         pthread_detach(t);
     }
 
@@ -401,3 +398,5 @@ int main(int argc, char **argv)
 
     return 0;
 }
+
+*/

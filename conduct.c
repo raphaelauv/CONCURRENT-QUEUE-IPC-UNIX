@@ -98,6 +98,9 @@ int conduct_show(struct conduct *c){
 		if(array[i]==0){
 			array[i]='-';
 		}
+		if(array[i]=='\n' || array[i]=='\r'){
+			array[i]='§';
+		}
 	}
 
 	//sem_post(&ct->semaphore);
@@ -319,9 +322,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		goto cleanup;
 	}
 
-	//sem_wait(&cont->semaphore);
-
-	if(pthread_mutex_lock(&cont->mutex)){
+	if(pthread_mutex_lock(&cont->mutex)){//sem_wait(&cont->semaphore);
 		errno = ENOLCK;
 		goto cleanup;
 	}
@@ -351,9 +352,8 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	}
 	*/
 
-	//sem_post(&cont->semaphore);
 
-	if(pthread_mutex_unlock(&cont->mutex)){
+	if(pthread_mutex_unlock(&cont->mutex)){//sem_post(&cont->semaphore);
 		goto cleanup;
 	}
 
@@ -416,19 +416,14 @@ struct conduct *conduct_open(const char *name) {
 
 	cont = (struct content *) cond->mmap;
 
-	//sem_wait(&cont->semaphore);
-
-
-	if (pthread_mutex_lock(&cont->mutex)) {
+	if (pthread_mutex_lock(&cont->mutex)){//sem_wait(&cont->semaphore);
 		errno=ENOLCK;
 		goto cleanup;
 	}
 
 	cond->size_mmap = cont->size_mmap;
 
-	//sem_post(&cont->semaphore);
-
-	if (pthread_mutex_unlock(&cont->mutex)) {
+	if (pthread_mutex_unlock(&cont->mutex)) {//sem_post(&cont->semaphore);
 		goto cleanup;
 	}
 
@@ -540,7 +535,10 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 			data->sizeAvailable = ct->end - ct->start;
 		}else {
 			data->sizeAvailable = (ct->sizeMax - ct->end) + ct->start;
-			data->passByMiddle = 1;
+
+			if(ct->sizeMax - ct->end <= data->sizeToManipulate){
+				data->passByMiddle=1;
+			}
 		}
 
 		return;
@@ -574,36 +572,28 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 		int limit;
 		size_t i;
 
-
-	//sem_wait(&ct->semaphore);
-
-	if(pthread_mutex_lock(&ct->mutex)){
+	if(pthread_mutex_lock(&ct->mutex)){//sem_wait(&ct->semaphore);
 		errno=ENOLCK;
 		return -1;
 	}
 
-	if(ct->isEOF){
-		pthread_mutex_unlock(&ct->mutex);
-		return 0;
-	}
+	do{
+		if(ct->isEOF) {
+			pthread_mutex_unlock(&ct->mutex);
+			return 0;
+		}
 
-	while (ct->isEmpty) {
-		pthread_cond_wait(&ct->condition, &ct->mutex);
-	}
+		if (ct->isEmpty) {
+			pthread_cond_wait(&ct->condition, &ct->mutex);
+		}
+
+	}while(ct->isEOF || ct->isEmpty );
 
 	eval_position_and_size_of_data(ct,&data,FLAG_READ);
-	while(data.sizeAvailable<1){
-		pthread_cond_wait(&ct->condition, &ct->mutex);
-		eval_position_and_size_of_data(ct,&data,FLAG_READ);
-	}
-
-	//printf("passbyMille READ = %d\n",data.passByMiddle);
-
-
 	eval_size_to_manipulate(ct,&data,FLAG_READ);
-
 	eval_limit_loops(ct,&data,FLAG_READ);
 
+	//printf("passbyMille READ = %d\n",data.passByMiddle);
 	//printf("firstMaxFor READ : %d\n",(int)data.firstMaxFor);
 	//printf("secondMaxFor READ : %d\n",(int)data.secondMaxFor);
 
@@ -629,8 +619,7 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	}
 
 	pthread_cond_signal(&ct->condition);
-	//sem_post(&ct->semaphore);
-	pthread_mutex_unlock(&ct->mutex);
+	pthread_mutex_unlock(&ct->mutex);//sem_post(&ct->semaphore);
 	return data.sizeReallyManipulate;
 
 
@@ -656,58 +645,45 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 		int limit;
 		size_t i;
 
-
-	//sem_wait(&ct->semaphore);
-
-
-	if(pthread_mutex_lock(&ct->mutex)){
+	if(pthread_mutex_lock(&ct->mutex)){//sem_wait(&ct->semaphore);
 		errno=ENOLCK;
 		return -1;
 	}
 
-	if (ct->isEOF) {
-		//sem_post(&ct->semaphore);
-		pthread_mutex_unlock(&ct->mutex);
-		errno = EPIPE;
-		return -1;
+	if (flag == FLAG_WRITE_EOF) {
+		ct->isEOF = 1;
+		pthread_mutex_unlock(&ct->mutex);//sem_post(&ct->semaphore);
+		return count;
 	}
 
-	eval_size_to_manipulate(ct,&data,FLAG_WRITE);
 
-	eval_position_and_size_of_data(ct,&data,FLAG_WRITE);
-
-	while((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
-		//buffer is FULL for the moment or there is not sufisant place
-		if(pthread_cond_wait(&ct->condition, &ct->mutex)){
-			return -1;
-		}
-
+	do{
 		if (ct->isEOF) {
-			sem_post(&ct->semaphore);
-			//pthread_mutex_unlock(&ct->mutex);
+			pthread_mutex_unlock(&ct->mutex);//sem_post(&ct->semaphore);
 			errno = EPIPE;
 			return -1;
 		}
 
+		eval_size_to_manipulate(ct,&data,FLAG_WRITE);
 		eval_position_and_size_of_data(ct,&data,FLAG_WRITE);
-	}
 
-	if (flag==FLAG_WRITE_EOF) {
-		//ct->buffCircular[ct->end] = EOF;
-		//ct->end++;
-		ct->isEOF = 1;
-		//sem_post(&ct->semaphore);
-		pthread_mutex_unlock(&ct->mutex);
-		return count;
-	}
+		if((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
+			//buffer is FULL for the moment or there is not sufisant place
+			if(pthread_cond_wait(&ct->condition, &ct->mutex)){
+				return -1;
+			}
+		}
 
-	//printf("passbyMille WRITE = %d\n",data.passByMiddle);
+
+	}while(ct->isEOF || (ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable);
 
 	eval_limit_loops(ct,&data,FLAG_WRITE);
 
-	//printf("firstMaxFor WRITE : %d\n",(int)data.firstMaxFor);
-	//printf("secondMaxFor WRITE : %d\n",(int)data.secondMaxFor);
-
+	/*
+	printf("passbyMille WRITE = %d\n",data.passByMiddle);
+	printf("firstMaxFor WRITE : %d\n",(int)data.firstMaxFor);
+	printf("secondMaxFor WRITE : %d\n",(int)data.secondMaxFor);
+	*/
 
 	limit=data.firstMaxFor;
 
@@ -732,8 +708,7 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 	}
 
 	pthread_cond_signal(&ct->condition);
-	//sem_post(&ct->semaphore);
-	pthread_mutex_unlock(&ct->mutex);
+	pthread_mutex_unlock(&ct->mutex);//sem_post(&ct->semaphore);
 
 	return  data.sizeReallyManipulate;
 
