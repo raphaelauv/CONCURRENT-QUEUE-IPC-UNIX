@@ -248,11 +248,19 @@ button_callback(GtkWidget *widget, GdkEventButton *event)
 int main(int argc, char **argv)
 {
 
-	struct conduct *a = conduct_create("TOTO", 5,10);
+	struct conduct *c = conduct_create("TOTO", 5,10);
 
-	struct conduct *b = conduct_open("TATA");
+	conduct_close(c);
+	//conduct_destroy(c);
 
-	struct conduct *c = conduct_open("TOTO");
+	c=conduct_open("TOTO");
+	if(c==NULL){
+		return 0;
+	}
+
+	struct conduct *a =conduct_open("TOTO");
+
+	//struct conduct *c = conduct_open("TOTO");
 
 	if(a==NULL){
 		printf("FAIL\n");
@@ -305,7 +313,8 @@ int main(int argc, char **argv)
 	printf("\nDEDANS : %s\n\n",buff4);
 	conduct_show(c);
 
-	//return 0;
+
+	return 0;
     GtkWidget* canvas;
     struct twocons cons;
     int numthreads = 0;

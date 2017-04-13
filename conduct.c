@@ -162,11 +162,16 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 
 extern inline int copyFileName(const char * fileName ,struct conduct * cond){
 
+	cond->fileName = malloc(sizeof(char) * MAXIMUM_SIZE_NAME_CONDUCT);
 	int i=0;
 	while(i<MAXIMUM_SIZE_NAME_CONDUCT && fileName[i]!='\0' && fileName[i]!=EOF){
 		cond->fileName[i]=fileName[i];
 		i++;
 	}
+
+	cond->fileName[i]='\0';
+
+	printf("NOM COPIER : %s\n",cond->fileName);
 
 	if(i==MAXIMUM_SIZE_NAME_CONDUCT){
 		return -1;
@@ -176,6 +181,11 @@ extern inline int copyFileName(const char * fileName ,struct conduct * cond){
 }
 
 struct conduct *conduct_create(const char *name, size_t a, size_t c) {
+
+	if(c<1 || a<1){
+		errno=EINVAL;
+		return NULL;
+	}
 
 	struct content * cont = NULL;
 	struct conduct * cond = NULL;
@@ -194,7 +204,6 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	cond->size_mmap += sizeof(struct content);
 
 	if (name != NULL) {
-		cond->fileName = malloc(sizeof(char) * MAXIMUM_SIZE_NAME_CONDUCT);
 		if(copyFileName(name,cond)){
 			errno = ENAMETOOLONG;
 			goto cleanup;
@@ -323,8 +332,8 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 struct conduct *conduct_open(const char *name) {
 
-
 	if(name==NULL){
+		errno=EINVAL;
 		return NULL;
 	}
 
@@ -332,6 +341,11 @@ struct conduct *conduct_open(const char *name) {
 	struct conduct * cond = (struct conduct *) malloc(sizeof(struct conduct));
 	if (cond == NULL) {
 		return NULL;
+	}
+
+	if (copyFileName(name, cond)) {
+		errno = ENAMETOOLONG;
+		goto cleanup;
 	}
 
 	cond->mmap=MAP_FAILED;
@@ -699,9 +713,15 @@ int conduct_write_eof(struct conduct *c) {
 }
 
 void conduct_close(struct conduct *conduct) {
+	if(conduct==NULL){
+		errno=EINVAL;
+	}
 	clean_Conduct(conduct, FLAG_CLEAN_CLOSE);
 }
 
 void conduct_destroy(struct conduct *conduct) {
+	if (conduct == NULL) {
+		errno = EINVAL;
+	}
 	clean_Conduct(conduct, FLAG_CLEAN_DESTROY);
 }
