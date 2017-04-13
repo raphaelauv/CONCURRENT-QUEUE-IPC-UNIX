@@ -248,23 +248,24 @@ button_callback(GtkWidget *widget, GdkEventButton *event)
 int main(int argc, char **argv)
 {
 
-	struct conduct *c = conduct_create("TOTO", 5,10);
+	struct conduct *c = conduct_create(NULL, 5,10);
 
-	conduct_close(c);
+	//conduct_close(c);
 	//conduct_destroy(c);
 
-	c=conduct_open("TOTO");
 	if(c==NULL){
-		return 0;
-	}
+			printf("FAIL\n");
+		}
 
-	struct conduct *a =conduct_open("TOTO");
+
+	//
+
+	//c=conduct_open("TOTO");
+
+	struct conduct *a =c;
 
 	//struct conduct *c = conduct_open("TOTO");
 
-	if(a==NULL){
-		printf("FAIL\n");
-	}
 
 	int size=conduct_write(a,"ABCDEFGHIJK",6);
 	conduct_show(c);
@@ -314,7 +315,7 @@ int main(int argc, char **argv)
 	conduct_show(c);
 
 
-	return 0;
+	//return 0;
     GtkWidget* canvas;
     struct twocons cons;
     int numthreads = 0;
