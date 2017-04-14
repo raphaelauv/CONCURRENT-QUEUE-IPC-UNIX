@@ -32,11 +32,8 @@ struct dataCirularBuffer{
 	ssize_t sizeReallyManipulate;
 
 	//for iter at end
-	int currentIndexIOV;
-	int currentIter;
 	char * currentBuf;
 	size_t currentCount;
-	int allCurrentCounts;
 
 };
 
@@ -562,11 +559,8 @@ extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct 
 		}
 
 		//for iter at end
-		data->currentIndexIOV=0;
-		data->currentIter=0;
-		data->currentBuf=iov[data->currentIndexIOV].iov_base;
-		data->currentCount=iov[data->currentIndexIOV].iov_len;
-		data->allCurrentCounts=data->currentCount;
+		data->currentBuf=iov[0].iov_base;
+		data->currentCount=iov[0].iov_len;
 
 
 		size_t sizeTotal=0;
@@ -581,9 +575,13 @@ extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct 
 }
 
 extern inline void apply_loops(struct dataCirularBuffer * data,struct content *ct,const struct iovec *iov,unsigned char flag){
-	int k;
+	int k=0;
 	int limit;
 	size_t i;
+
+	int currentIndexIOV=0;
+	int currentIter=0;
+	int allCurrentCounts=data->currentCount;
 
 	char modeWrite=0;
 
@@ -616,23 +614,23 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 		}
 		for ( ; i < limit; i++) {
 
-			if (data->sizeReallyManipulate == data->allCurrentCounts) {
-				data->currentIter = 0;
-				data->currentIndexIOV++;
-				data->currentBuf = iov[data->currentIndexIOV].iov_base;
-				data->currentCount = iov[data->currentIndexIOV].iov_len;
-				data->allCurrentCounts += data->currentCount;
+			if (data->sizeReallyManipulate == allCurrentCounts) {
+				currentIter = 0;
+				currentIndexIOV++;
+				data->currentBuf = iov[currentIndexIOV].iov_base;
+				data->currentCount = iov[currentIndexIOV].iov_len;
+				allCurrentCounts += data->currentCount;
 			}
 
 			if(modeWrite){
-				data->currentBuf[data->currentIter]=ct->buffCircular[i];
+				data->currentBuf[currentIter]=ct->buffCircular[i];
 				ct->start++;
 			}else{
-				ct->buffCircular[i]=data->currentBuf[data->currentIter];
+				ct->buffCircular[i]=data->currentBuf[currentIter];
 				ct->end++;
 			}
 
-			data->currentIter++;
+			currentIter++;
 			data->sizeReallyManipulate++;
 
 		}
