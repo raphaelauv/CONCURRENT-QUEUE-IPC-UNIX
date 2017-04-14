@@ -35,13 +35,10 @@ struct dataCirularBuffer{
 struct conduct{
 	int size_mmap;
 	char * fileName;
-	//pthread_mutex_t mutex;
-	//pthread_mutexattr_t mutexAttr;
 	void * mmap;
 };
 
 struct content {
-	int var;
 	pthread_mutex_t mutex;
 	pthread_mutexattr_t mutexAttr;
 
@@ -100,7 +97,7 @@ int conduct_show(struct conduct *c){
 			array[i]='-';
 		}
 		if(array[i]=='\n' || array[i]=='\r'){
-			array[i]='§';
+			array[i]='&';
 		}
 	}
 
@@ -161,9 +158,6 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 
 	int error=0;
 	if (cond != NULL) {
-
-		//pthread_mutex_destroy(&cond->mutex);
-		//pthread_mutexattr_destroy(&cond->mutexAttr);
 
 		if (cond->mmap != MAP_FAILED) {
 
@@ -241,15 +235,6 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	cond->mmap = MAP_FAILED;
 	cond->size_mmap = c + sizeof(struct content);
 
-	/*
-	result+=pthread_mutexattr_init(&cond->mutexAttr);
-	result+=pthread_mutexattr_setpshared(&cond->mutexAttr, PTHREAD_PROCESS_SHARED);
-	result+=pthread_mutex_init(&cond->mutex, &cond->mutexAttr);
-
-	if(result){
-		goto cleanup;
-	}
-	*/
 	int fd=-1;
 
 	if (name != NULL) {
@@ -309,8 +294,6 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	printf("sizeMMAP : %d\n",cond->size_mmap);
 
 	cont = (struct content *) cond->mmap;
-
-	cont->var = 0;
 
 	/*
 
@@ -405,6 +388,8 @@ struct conduct *conduct_open(const char *name) {
 		return NULL;
 	}
 
+	int fd=-1;
+
 	if (copyFileName(name, cond)) {
 		errno = ENAMETOOLONG;
 		goto cleanup;
@@ -412,7 +397,7 @@ struct conduct *conduct_open(const char *name) {
 
 	cond->mmap=MAP_FAILED;
 
-	int fd = open(name, O_RDWR ,FILE_mode);
+	fd = open(name, O_RDWR ,FILE_mode);
 	if (fd < 0) {
 		goto cleanup;
 	}
@@ -521,7 +506,7 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 			}
 
 		}else{
-			printf("BUFFER VIDE\n");
+			//printf("BUFFER VIDE\n");
 			data->sizeAvailable = 0;
 		}
 
@@ -531,7 +516,7 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 		if (ct->start == ct->end) {
 
 			if (flag == FLAG_WRITE) {
-				printf("BUFFER PLEIN\n");
+				//printf("BUFFER PLEIN\n");
 				data->sizeAvailable =0;
 
 			} else {
@@ -566,8 +551,12 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 	}else{
 
 		if (flag == FLAG_READ) {
-			data->sizeAvailable = ct->sizeMax - (ct->start - ct->end);
-			data->passByMiddle = 1;
+			data->sizeAvailable = (ct->sizeMax - ct->start) + ct->end;
+
+			if(ct->sizeMax - ct->start <= data->sizeToManipulate){
+				data->passByMiddle = 1;
+			}
+
 		}else{
 			data->sizeAvailable = ct->start -ct->end;
 		}
@@ -596,6 +585,8 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 		return -1;
 	}
 
+	int needReEval=0;
+
 	do{
 		if(ct->isEOF) {
 			pthread_mutex_unlock(&ct->mutex);
@@ -609,27 +600,33 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 			data.sizeToManipulate = data.sizeAvailable;
 		}
 		eval_position_and_size_of_data(ct,&data,FLAG_READ);
-
-		printf("in READ EVAL DONE\n");
-
-		if (ct->isEmpty) {
-			printf("in READ WAIT\n");
-
-			if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
-				printf("in READ WAIT FAIL\n");
-				return -1;
-			}
-
-			printf("in READ OUT OF  WAIT\n");
+		if (data.sizeToManipulate > data.sizeAvailable) {
+			data.sizeToManipulate = data.sizeAvailable;
 		}
 
-	}while(ct->isEOF || ct->isEmpty);
+		//printf("in READ EVAL DONE\n");
 
-	printf("in READ LOOP DONE , to READ -> %d\n",data.sizeToManipulate);
+		if (ct->isEmpty) {
+			//printf("in READ WAIT\n");
+
+			if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
+				//printf("in READ WAIT FAIL\n");
+				return -1;
+			}
+			needReEval=1;
+
+			//printf("in READ OUT OF  WAIT\n");
+		}else{
+			needReEval=0;
+		}
+
+	}while(ct->isEOF || ct->isEmpty || needReEval);
+
+	//printf("in READ LOOP DONE , to READ -> %d\n",(int)data.sizeToManipulate);
 
 	eval_limit_loops(ct,&data,FLAG_READ);
 
-	printf("READ passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
+	//printf("READ passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
 
 	limit=data.firstMaxFor;
 
@@ -649,7 +646,7 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	}
 
 	if (ct->start == ct->end) {
-		printf("READ BUFFER EMPTY NOW\n");
+		//printf("READ BUFFER EMPTY NOW\n");
 		ct->isEmpty=1;
 	}
 
@@ -714,7 +711,7 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 
 	eval_limit_loops(ct,&data,FLAG_WRITE);
 
-	printf("WRITE passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
+	//printf("WRITE passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
 
 
 	limit=data.firstMaxFor;

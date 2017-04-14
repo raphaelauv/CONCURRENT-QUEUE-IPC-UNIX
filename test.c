@@ -8,9 +8,8 @@
 #include <pthread.h>
 #include "conduct.h"
 
-#define ITERATIONS 1000
-#define QSIZE 100
-#define COUNT 100
+#define QSIZE 10
+#define COUNT 10
 
 /* Voir la fonction toc ci-dessous. */
 
@@ -115,7 +114,7 @@ static void * julia_thread(void *arg)
             return NULL;
         }
 
-        /*
+
         rep.x=req.x;
         rep.y=req.y;
         rep.number=req.number;
@@ -129,12 +128,10 @@ static void * julia_thread(void *arg)
             return NULL;
         }
 
-        */
 
         printf("WORKER : %d\n",req.number);
     }
 }
-
 
 int main(int argc, char **argv)
 {
@@ -197,3 +194,4 @@ int main(int argc, char **argv)
 
     return 0;
 }
+
