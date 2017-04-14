@@ -5,7 +5,6 @@
 int main(int argc, char **argv)
 {
 
-
 	struct conduct *c = conduct_create("TOTO", 5,10);
 
 	conduct_close(c);
