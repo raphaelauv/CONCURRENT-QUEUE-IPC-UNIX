@@ -40,26 +40,17 @@ struct conduct{
 
 struct content {
 	pthread_mutex_t mutex;
-	pthread_mutexattr_t mutexAttr;
-
 	pthread_cond_t conditionRead;
-	pthread_condattr_t condAttrRead;
-
 	pthread_cond_t conditionWrite;
-	pthread_condattr_t condAttrWrite;
-
-	//sem_t newToRead;
-	//sem_t newToWrite;
 
 	int size_mmap;
 	size_t sizeMax;
 	size_t sizeAtom;
-
-	char isEOF;
-	char isEmpty;
 	size_t start;
 	size_t end;
 
+	char isEOF;
+	char isEmpty;
 	char *buffCircular;
 };
 
@@ -101,7 +92,9 @@ int conduct_show(struct conduct *c){
 		}
 	}
 
-	pthread_mutex_unlock(&ct->mutex);
+	if(pthread_mutex_unlock(&ct->mutex)){
+		return -1;
+	}
 
 	if(start==end){
 		array2[start]='#';
@@ -138,19 +131,9 @@ int conduct_show(struct conduct *c){
 
 extern inline void clean_Content(struct content * cont) {
 	if (cont != NULL) {
-
 		pthread_cond_destroy(&cont->conditionRead);
-		pthread_condattr_destroy(&cont->condAttrRead);
-
 		pthread_cond_destroy(&cont->conditionWrite);
-		pthread_condattr_destroy(&cont->condAttrWrite);
-
 		pthread_mutex_destroy(&cont->mutex);
-		pthread_mutexattr_destroy(&cont->mutexAttr);
-
-
-		free(cont);
-		cont=NULL;
 	}
 }
 
@@ -161,17 +144,24 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 
 		if (cond->mmap != MAP_FAILED) {
 
-			if(msync(cond->mmap,cond->size_mmap,MS_SYNC)){
-				printf("ERROR msync()\n");
-				error=1;
+			if(cond->fileName!=NULL){
+				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
+					printf("ERROR msync()\n");
+					error = 1;
+				}
 			}
 
 			if(flag==FLAG_CLEAN_DESTROY){
-				if (munmap(cond->mmap, cond->size_mmap)) {
-					printf("ERROR munmap()\n");
-					error=1;
-				}
+				struct content * cont = (struct content *) cond->mmap;
+				clean_Content(cont);
 			}
+
+			if (munmap(cond->mmap, cond->size_mmap)) {
+				printf("ERROR munmap()\n");
+				error = 1;
+			}
+
+			cond->mmap=NULL;
 
 		}
 
@@ -182,12 +172,10 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 					error = 1;
 				}
 			}
-			//free(cond->fileName); //TODO
+			free(cond->fileName);
 			cond->fileName=NULL;
 		}
-
 		free(cond);
-		cond = NULL;
 	}
 	return error;
 }
@@ -203,7 +191,7 @@ extern inline int copyFileName(const char * fileName ,struct conduct * cond){
 
 	cond->fileName[i]='\0';
 
-	printf("NOM COPIER : %s\n",cond->fileName);
+	//printf("NOM COPIER : %s\n",cond->fileName);
 
 	if(i==MAXIMUM_SIZE_NAME_CONDUCT){
 		return -1;
@@ -291,39 +279,34 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		}
 	}
 
-	printf("sizeMMAP : %d\n",cond->size_mmap);
-
 	cont = (struct content *) cond->mmap;
-
-	/*
-
-	 if( sem_init(&cont->newToRead,0, 1)<0){//pshared
-		goto cleanup;
-	}
-
-	if (sem_init(&cont->newToWrite,0, 1) < 0){//pshared
-		goto cleanup;
-	}
-
-	*/
 
 	result=0;
 
-	result+=pthread_condattr_init(&cont->condAttrRead);
-	result+=pthread_condattr_setpshared(&cont->condAttrRead,PTHREAD_PROCESS_SHARED);
-	result+=pthread_cond_init(&cont->conditionRead, &cont->condAttrRead);
+	pthread_mutexattr_t mutexAttr;
+	pthread_condattr_t condAttrRead;
+	pthread_condattr_t condAttrWrite;
 
-	result+=pthread_condattr_init(&cont->condAttrWrite);
-	result+=pthread_condattr_setpshared(&cont->condAttrWrite,PTHREAD_PROCESS_SHARED);
-	result+=pthread_cond_init(&cont->conditionWrite, &cont->condAttrWrite);
+	result+=pthread_condattr_init(&condAttrRead);
+	result+=pthread_condattr_setpshared(&condAttrRead,PTHREAD_PROCESS_SHARED);
+	result+=pthread_cond_init(&cont->conditionRead, &condAttrRead);
 
-	result+=pthread_mutexattr_init(&cont->mutexAttr);
-	result+=pthread_mutexattr_setpshared(&cont->mutexAttr, PTHREAD_PROCESS_SHARED);
-	result+=pthread_mutex_init(&cont->mutex, &cont->mutexAttr);
+	result+=pthread_condattr_init(&condAttrWrite);
+	result+=pthread_condattr_setpshared(&condAttrWrite,PTHREAD_PROCESS_SHARED);
+	result+=pthread_cond_init(&cont->conditionWrite, &condAttrWrite);
+
+	result+=pthread_mutexattr_init(&mutexAttr);
+	result+=pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
+	result+=pthread_mutex_init(&cont->mutex, &mutexAttr);
 
 	if(result){
 		goto cleanup;
 	}
+
+	pthread_mutexattr_destroy(&mutexAttr);
+	pthread_condattr_destroy(&condAttrRead);
+	pthread_condattr_destroy(&condAttrWrite);
+
 
 	if(pthread_mutex_lock(&cont->mutex)){
 		goto cleanup;
@@ -346,19 +329,9 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	int decalage=(sizeof(struct content));
 	cont->buffCircular=(void *)cont + decalage ;
 
-	//printf("BUFF2 -> %p\n",cont->buffCircular);
-
-	/*
-	for(int i=0;i<cond->c;i++ ){
-		cont->buffCircular[i]='G';
-	}
-	*/
-
-
 	if(pthread_mutex_unlock(&cont->mutex)){
 		goto cleanup;
 	}
-
 
 	msync(cond->mmap,cond->size_mmap,MS_SYNC);
 
@@ -370,7 +343,6 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 			}
 		}
 		clean_Conduct(cond,FLAG_CLEAN_DESTROY);
-		clean_Content(cont);
 		return NULL;
 
 }
@@ -430,7 +402,7 @@ struct conduct *conduct_open(const char *name) {
 		goto cleanup;
 	}
 
-	printf("SIZE MMAP DANS OPEN : %d\n",cond->size_mmap);
+	//printf("SIZE MMAP DANS OPEN : %d\n",cond->size_mmap);
 	return cond;
 
 
@@ -506,7 +478,6 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 			}
 
 		}else{
-			//printf("BUFFER VIDE\n");
 			data->sizeAvailable = 0;
 		}
 
@@ -516,7 +487,6 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 		if (ct->start == ct->end) {
 
 			if (flag == FLAG_WRITE) {
-				//printf("BUFFER PLEIN\n");
 				data->sizeAvailable =0;
 
 			} else {
@@ -590,7 +560,6 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	do{
 		if(ct->isEOF) {
 			pthread_mutex_unlock(&ct->mutex);
-			printf("READ RETURN EOF\n");
 			return 0;
 		}
 
@@ -610,7 +579,6 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 			//printf("in READ WAIT\n");
 
 			if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
-				//printf("in READ WAIT FAIL\n");
 				return -1;
 			}
 			needReEval=1;
@@ -621,8 +589,6 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 		}
 
 	}while(ct->isEOF || ct->isEmpty || needReEval);
-
-	//printf("in READ LOOP DONE , to READ -> %d\n",(int)data.sizeToManipulate);
 
 	eval_limit_loops(ct,&data,FLAG_READ);
 
@@ -646,12 +612,15 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	}
 
 	if (ct->start == ct->end) {
-		//printf("READ BUFFER EMPTY NOW\n");
 		ct->isEmpty=1;
 	}
 
-	pthread_cond_signal(&ct->conditionWrite);
-	pthread_mutex_unlock(&ct->mutex);
+	if(pthread_cond_signal(&ct->conditionWrite)){
+		return -1;
+	}
+	if(pthread_mutex_unlock(&ct->mutex)){
+		return -1;
+	}
 	return data.sizeReallyManipulate;
 
 
@@ -701,7 +670,6 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 
 		if((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
 			//buffer is FULL for the moment or there is not sufisant place
-			//printf("WRITE BUFFER FULL");
 			if(pthread_cond_wait(&ct->conditionWrite, &ct->mutex)){
 				return -1;
 			}
@@ -736,8 +704,12 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 		ct->isEmpty=0;
 	}
 
-	pthread_cond_signal(&ct->conditionRead);
-	pthread_mutex_unlock(&ct->mutex);
+	if(pthread_cond_signal(&ct->conditionRead)){
+		return -1;
+	}
+	if(pthread_mutex_unlock(&ct->mutex)){
+		return -1;
+	}
 
 	return  data.sizeReallyManipulate;
 
