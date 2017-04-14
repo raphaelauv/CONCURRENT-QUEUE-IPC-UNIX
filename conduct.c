@@ -15,10 +15,9 @@
 
 #define INTERNAL_FLAG_WRITE 1
 #define INTERNAL_FLAG_READ 2
-
-#define FLAG_WRITE_EOF 1
-#define FLAG_WRITE_NORMAL 2
-#define FLAG_O_NONBLOCK 4
+#define FLAG_WRITE_EOF 4
+#define FLAG_WRITE_NORMAL 8
+#define FLAG_O_NONBLOCK 16
 
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
@@ -31,6 +30,14 @@ struct dataCirularBuffer{
 	size_t secondMaxFor;
 	size_t sizeToManipulate;
 	ssize_t sizeReallyManipulate;
+
+	//for iter at end
+	int currentIndexIOV;
+	int currentIter;
+	char * currentBuf;
+	size_t currentCount;
+	int allCurrentCounts;
+
 };
 
 struct conduct{
@@ -478,7 +485,7 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 		if(flag==INTERNAL_FLAG_WRITE){
 			data->sizeAvailable = ct->sizeMax;
 
-			if ( (ct->end + data->sizeToManipulate) > ct->sizeMax) {
+			if ( (ct->end + data->sizeToManipulate) >= ct->sizeMax) {
 				data->passByMiddle = 1;
 			}
 
@@ -497,7 +504,7 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 			} else {
 				data->sizeAvailable = ct->sizeMax;
 
-				if ((ct->start + data->sizeToManipulate) > ct->sizeMax) {
+				if ((ct->start + data->sizeToManipulate) >= ct->sizeMax) {
 					data->passByMiddle = 1;
 				}
 
@@ -540,33 +547,111 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 	}
 }
 
+extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
+
+	if (c == NULL || iovcnt == 0 || iov == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		const char * buf=iov[0].iov_base;
+		const int count=iov[0].iov_len;
+
+		if (buf == NULL || count == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+
+		//for iter at end
+		data->currentIndexIOV=0;
+		data->currentIter=0;
+		data->currentBuf=iov[data->currentIndexIOV].iov_base;
+		data->currentCount=iov[data->currentIndexIOV].iov_len;
+		data->allCurrentCounts=data->currentCount;
+
+
+		size_t sizeTotal=0;
+
+		for (int i = 0; i < iovcnt; i++) {
+			sizeTotal += iov[i].iov_len;
+		}
+
+		data->count = sizeTotal;
+
+		return 0;
+}
+
+extern inline void apply_loops(struct dataCirularBuffer * data,struct content *ct,const struct iovec *iov,unsigned char flag){
+	int k;
+	int limit;
+	size_t i;
+
+	char modeWrite=0;
+
+	if(flag==INTERNAL_FLAG_READ){
+		modeWrite=1;
+	}
+
+
+	limit=data->firstMaxFor;
+
+	for(k=0;k<1+data->passByMiddle;k++){
+
+		if(k==1){
+
+			if(modeWrite){
+				ct->start=0;
+			}else{
+				if (ct->end != ct->sizeMax) {
+					printf("ERROR DEPLACEMENT FIN BUFFER CIRCULAIRE\n");
+				}
+				ct->end=0;
+			}
+
+			limit=data->secondMaxFor;
+		}
+		if(modeWrite){
+			i=ct->start;
+		}else{
+			i=ct->end;
+		}
+		for ( ; i < limit; i++) {
+
+			if (data->sizeReallyManipulate == data->allCurrentCounts) {
+				data->currentIter = 0;
+				data->currentIndexIOV++;
+				data->currentBuf = iov[data->currentIndexIOV].iov_base;
+				data->currentCount = iov[data->currentIndexIOV].iov_len;
+				data->allCurrentCounts += data->currentCount;
+			}
+
+			if(modeWrite){
+				data->currentBuf[data->currentIter]=ct->buffCircular[i];
+				ct->start++;
+			}else{
+				ct->buffCircular[i]=data->currentBuf[data->currentIter];
+				ct->end++;
+			}
+
+			data->currentIter++;
+			data->sizeReallyManipulate++;
+
+		}
+
+	}
+}
+
 
 extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
 
-
-	if (c == NULL || iov==NULL || iovcnt==0) {
-		errno=EINVAL;
-		return -1;
-	}
-	const char * buf=iov[0].iov_base;
-	const int count=iov[0].iov_len;
-
-	if (buf == NULL || count == 0) {
-		errno = EINVAL;
-		return -1;
-	}
-
-
-	char * localBuf = (char *) buf;
 	struct content * ct = (struct content *) c->mmap;
 	struct dataCirularBuffer data = { 0 };
-	data.count = count;
 
-	//for iter at end
-		int k;
-		int limit;
-		size_t i;
 
+
+	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
+		printf("ERROR\n");
+		return -1;
+	}
 
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 		if(pthread_mutex_trylock(&ct->mutex)){
@@ -625,22 +710,7 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	//printf("READ passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
 
-	limit=data.firstMaxFor;
-
-	for(k=0;k<1+data.passByMiddle;k++){
-
-		if(k==1){
-			ct->start=0;
-			limit=data.secondMaxFor;
-		}
-
-		for (i = ct->start; i < limit; i++) {
-			localBuf[data.sizeReallyManipulate] = ct->buffCircular[i];
-			data.sizeReallyManipulate++;
-			ct->start++;
-		}
-
-	}
+	apply_loops(&data,ct,iov,INTERNAL_FLAG_READ);
 
 	if (ct->start == ct->end) {
 		ct->isEmpty=1;
@@ -657,39 +727,20 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 }
 
-
 extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
 
-
-	if (c == NULL || iovcnt==0) {
-		errno=EINVAL;
-		return -1;
-	}
-
-	const char * buf=iov[0].iov_base;
-	const int count=iov[0].iov_len;
-
-	if (count == 0) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	//if (buf==NULL) {errno=EINVAL;return -1;} FEATURE
-
-	char * localBuf = (char *) buf;
 	struct content * ct = (struct content *) c->mmap;
 	struct dataCirularBuffer data = { 0 };
-	data.count = count;
 
-	//for iter at end
-		int k;
-		int limit;
-		size_t i;
+	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
+		printf("ERROR\n");
+		return -1;
+	}
 
 
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 		if(pthread_mutex_trylock(&ct->mutex)){
-			return count;
+			return -1;
 		}
 	}else{
 		if (pthread_mutex_lock(&ct->mutex)) {
@@ -701,7 +752,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
 		pthread_mutex_unlock(&ct->mutex);
-		return count;
+		return 0;
 	}
 
 
@@ -720,7 +771,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				errno=EAGAIN;
-				return count;
+				return 0;
 			}else{
 				if (pthread_cond_wait(&ct->conditionWrite, &ct->mutex)) {
 					return -1;
@@ -736,24 +787,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 	//printf("WRITE passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
 
-
-	limit=data.firstMaxFor;
-
-	for(k=0;k<1+data.passByMiddle;k++){
-		if(k==1){
-			if (ct->end != ct->sizeMax) {
-				printf("ERROR DEPLACEMENT FIN BUFFER CIRCULAIRE\n");
-			}
-			ct->end=0;
-			limit=data.secondMaxFor;
-		}
-
-		for ( i = ct->end; i < limit; i++) {
-			ct->buffCircular[i]=localBuf[data.sizeReallyManipulate];
-			data.sizeReallyManipulate++;
-			ct->end++;
-		}
-	}
+	apply_loops(&data,ct,iov,INTERNAL_FLAG_WRITE);
 
 	if(data.sizeReallyManipulate>0){
 		ct->isEmpty=0;
@@ -766,13 +800,10 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
+
 	return  data.sizeReallyManipulate;
 
-
-
-
 }
-
 
 ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 
@@ -781,9 +812,6 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 	iov.iov_len=count;
 
 	return conduct_read_v_flag(c,&iov,1,0);
-
-	//return conduct_read_FLAG(c,buf,count,0);
-
 }
 
 ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
@@ -793,10 +821,7 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
 	iov.iov_len=count;
 
 	return conduct_write_v_flag(c,&iov,1,FLAG_WRITE_NORMAL);
-
-	//return conduct_write_FLAG(c,buf,count,FLAG_WRITE_NORMAL);
 }
-
 
 int conduct_write_eof_FLAG(struct conduct *c,unsigned char flag) {
 
@@ -810,7 +835,6 @@ int conduct_write_eof_FLAG(struct conduct *c,unsigned char flag) {
 
 	result = conduct_write_v_flag(c,&iov,1,FLAG_WRITE_NORMAL | flag);
 
-	//result = conduct_write_FLAG(c, &tmp, size, FLAG_WRITE_EOF | flag);
 	if ((result == -1 && errno == EPIPE) || result == 1) {
 		return 0; //EOF is already write , or just been write
 	}
@@ -825,12 +849,9 @@ void conduct_close(struct conduct *conduct) {
 	clean_Conduct(conduct, FLAG_CLEAN_CLOSE);
 }
 
-
 void conduct_destroy(struct conduct *conduct) {
 	clean_Conduct(conduct, FLAG_CLEAN_DESTROY);
 }
-
-
 
 ssize_t conduct_read_nb(struct conduct *c, void *buf, size_t count){
 	struct iovec iov;
@@ -849,7 +870,6 @@ ssize_t conduct_write_nb(struct conduct *c, const void *buf, size_t count){
 int conduct_write_eof_nb(struct conduct *c){
 	return conduct_write_eof_FLAG(c,FLAG_O_NONBLOCK);
 }
-
 
 ssize_t conduct_writev(struct conduct *c,const struct iovec *iov, int iovcnt){
 	return conduct_write_v_flag(c,iov,iovcnt,FLAG_WRITE_NORMAL);

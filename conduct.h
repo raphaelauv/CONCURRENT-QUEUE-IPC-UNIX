@@ -15,7 +15,7 @@
 
 struct conduct;
 
-//API
+//BASIC API
 struct conduct *conduct_create(const char *name, size_t a, size_t c);
 struct conduct *conduct_open(const char *name);
 ssize_t conduct_read(struct conduct *c, void *buf, size_t count);

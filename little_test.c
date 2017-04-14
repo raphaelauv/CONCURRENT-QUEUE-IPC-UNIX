@@ -5,9 +5,45 @@
 int main(int argc, char **argv)
 {
 
-	struct conduct *c = conduct_create("TOTO", 5,10);
+	struct conduct *c = conduct_create("TOTO", 10,10);
+	conduct_show(c);
 
-	conduct_close(c);
+	struct iovec iov [10];
+
+	char aaa[10]={'A','A','A','A','A','A','A','A','A','A'};
+	for(int i=0;i<10;i++){
+		iov[i].iov_base=&aaa[i];
+		iov[i].iov_len=1;
+	}
+
+	conduct_writev(c,iov,10);
+
+	conduct_show(c);
+
+	struct iovec iov2 [10];
+
+	char tt[10];
+
+	for(int i=0;i<10;i++){
+		iov2[i].iov_base=&tt[i];
+		iov2[i].iov_len=1;
+	}
+
+	conduct_readv(c,iov2,10);
+
+
+	printf("READ : ");
+	for(int i=0;i<10;i++){
+		char * p=(char *) iov2[i].iov_base;
+		printf("%c",*p);
+	}
+	printf("\n");
+
+	conduct_show(c);
+
+	return 0;
+
+	//conduct_close(c);
 	//conduct_destroy(c);
 
 	c=conduct_open("TOTO");
