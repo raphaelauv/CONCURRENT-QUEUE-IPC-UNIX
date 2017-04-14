@@ -45,10 +45,14 @@ struct content {
 	pthread_mutex_t mutex;
 	pthread_mutexattr_t mutexAttr;
 
-	pthread_cond_t condition;
-	pthread_condattr_t condAttr;
+	pthread_cond_t conditionRead;
+	pthread_condattr_t condAttrRead;
 
-	sem_t semaphore;
+	pthread_cond_t conditionWrite;
+	pthread_condattr_t condAttrWrite;
+
+	//sem_t newToRead;
+	//sem_t newToWrite;
 
 	int size_mmap;
 	size_t sizeMax;
@@ -80,10 +84,7 @@ int conduct_show(struct conduct *c){
 	int isEOF=0;
 	int isEmpty=0;
 
-	//sem_wait(&ct->semaphore);
-
 	if(pthread_mutex_lock(&ct->mutex)){
-		errno=ENOLCK;
 		return -1;
 	}
 
@@ -103,7 +104,6 @@ int conduct_show(struct conduct *c){
 		}
 	}
 
-	//sem_post(&ct->semaphore);
 	pthread_mutex_unlock(&ct->mutex);
 
 	if(start==end){
@@ -141,10 +141,19 @@ int conduct_show(struct conduct *c){
 
 extern inline void clean_Content(struct content * cont) {
 	if (cont != NULL) {
+
+		pthread_cond_destroy(&cont->conditionRead);
+		pthread_condattr_destroy(&cont->condAttrRead);
+
+		pthread_cond_destroy(&cont->conditionWrite);
+		pthread_condattr_destroy(&cont->condAttrWrite);
+
 		pthread_mutex_destroy(&cont->mutex);
-		pthread_cond_destroy(&cont->condition);
-		pthread_condattr_destroy(&cont->condAttr);
 		pthread_mutexattr_destroy(&cont->mutexAttr);
+
+
+		free(cont);
+		cont=NULL;
 	}
 }
 
@@ -228,7 +237,6 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		return NULL;
 	}
 
-	//cond->fd = -1;
 	cond->fileName = NULL;
 	cond->mmap = MAP_FAILED;
 	cond->size_mmap = c + sizeof(struct content);
@@ -304,15 +312,27 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 	cont->var = 0;
 
-	if( sem_init(&cont->semaphore, 1, 1)<0){//pshared
+	/*
+
+	 if( sem_init(&cont->newToRead,0, 1)<0){//pshared
 		goto cleanup;
 	}
 
+	if (sem_init(&cont->newToWrite,0, 1) < 0){//pshared
+		goto cleanup;
+	}
+
+	*/
+
 	result=0;
 
-	result+=pthread_condattr_init(&cont->condAttr);
-	result+=pthread_condattr_setpshared(&cont->condAttr,PTHREAD_PROCESS_SHARED);
-	result+=pthread_cond_init(&cont->condition, &cont->condAttr);
+	result+=pthread_condattr_init(&cont->condAttrRead);
+	result+=pthread_condattr_setpshared(&cont->condAttrRead,PTHREAD_PROCESS_SHARED);
+	result+=pthread_cond_init(&cont->conditionRead, &cont->condAttrRead);
+
+	result+=pthread_condattr_init(&cont->condAttrWrite);
+	result+=pthread_condattr_setpshared(&cont->condAttrWrite,PTHREAD_PROCESS_SHARED);
+	result+=pthread_cond_init(&cont->conditionWrite, &cont->condAttrWrite);
 
 	result+=pthread_mutexattr_init(&cont->mutexAttr);
 	result+=pthread_mutexattr_setpshared(&cont->mutexAttr, PTHREAD_PROCESS_SHARED);
@@ -322,8 +342,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		goto cleanup;
 	}
 
-	if(pthread_mutex_lock(&cont->mutex)){//sem_wait(&cont->semaphore);
-		errno = ENOLCK;
+	if(pthread_mutex_lock(&cont->mutex)){
 		goto cleanup;
 	}
 
@@ -353,7 +372,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	*/
 
 
-	if(pthread_mutex_unlock(&cont->mutex)){//sem_post(&cont->semaphore);
+	if(pthread_mutex_unlock(&cont->mutex)){
 		goto cleanup;
 	}
 
@@ -416,14 +435,13 @@ struct conduct *conduct_open(const char *name) {
 
 	cont = (struct content *) cond->mmap;
 
-	if (pthread_mutex_lock(&cont->mutex)){//sem_wait(&cont->semaphore);
-		errno=ENOLCK;
+	if (pthread_mutex_lock(&cont->mutex)){
 		goto cleanup;
 	}
 
 	cond->size_mmap = cont->size_mmap;
 
-	if (pthread_mutex_unlock(&cont->mutex)) {//sem_post(&cont->semaphore);
+	if (pthread_mutex_unlock(&cont->mutex)) {
 		goto cleanup;
 	}
 
@@ -462,7 +480,7 @@ extern inline void eval_limit_loops(struct content * ct,struct dataCirularBuffer
 	}else{
 
 		if(flag==FLAG_WRITE){
-			data->firstMaxFor=ct->end;
+			data->firstMaxFor=ct->end ;
 		}else{
 			data->firstMaxFor=ct->start;
 		}
@@ -489,11 +507,6 @@ extern inline void eval_size_to_manipulate(struct content * ct,struct dataCirula
 		data->sizeToManipulate=data->count;
 
 	}
-
-	if(data->sizeToManipulate>data->sizeAvailable){
-		data->sizeToManipulate = data->sizeAvailable;
-	}
-
 }
 
 extern inline void eval_position_and_size_of_data(struct content * ct,struct dataCirularBuffer * data,int flag) {
@@ -502,11 +515,13 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 
 		if(flag==FLAG_WRITE){
 			data->sizeAvailable = ct->sizeMax;
-			if(ct->start!=0){
-				data->passByMiddle=1;
+
+			if ( (ct->end + data->sizeToManipulate) > ct->sizeMax) {
+				data->passByMiddle = 1;
 			}
 
 		}else{
+			printf("BUFFER VIDE\n");
 			data->sizeAvailable = 0;
 		}
 
@@ -516,15 +531,19 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 		if (ct->start == ct->end) {
 
 			if (flag == FLAG_WRITE) {
-				data->sizeAvailable = 0;
+				printf("BUFFER PLEIN\n");
+				data->sizeAvailable =0;
+
 			} else {
 				data->sizeAvailable = ct->sizeMax;
+
+				if ((ct->start + data->sizeToManipulate) > ct->sizeMax) {
+					data->passByMiddle = 1;
+				}
+
 			}
 
-			if (ct->start != 0) {
-				data->passByMiddle = 1;
 
-			}
 			return;
 		}
 	}
@@ -533,6 +552,7 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 
 		if(flag==FLAG_READ){
 			data->sizeAvailable = ct->end - ct->start;
+			data->passByMiddle=0;
 		}else {
 			data->sizeAvailable = (ct->sizeMax - ct->end) + ct->start;
 
@@ -572,30 +592,44 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 		int limit;
 		size_t i;
 
-	if(pthread_mutex_lock(&ct->mutex)){//sem_wait(&ct->semaphore);
-		errno=ENOLCK;
+	if(pthread_mutex_lock(&ct->mutex)){
 		return -1;
 	}
 
 	do{
 		if(ct->isEOF) {
 			pthread_mutex_unlock(&ct->mutex);
+			printf("READ RETURN EOF\n");
 			return 0;
 		}
 
+		eval_size_to_manipulate(ct,&data,FLAG_READ);
+		eval_position_and_size_of_data(ct,&data,FLAG_READ);
+		if (data.sizeToManipulate > data.sizeAvailable) {
+			data.sizeToManipulate = data.sizeAvailable;
+		}
+		eval_position_and_size_of_data(ct,&data,FLAG_READ);
+
+		printf("in READ EVAL DONE\n");
+
 		if (ct->isEmpty) {
-			pthread_cond_wait(&ct->condition, &ct->mutex);
+			printf("in READ WAIT\n");
+
+			if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
+				printf("in READ WAIT FAIL\n");
+				return -1;
+			}
+
+			printf("in READ OUT OF  WAIT\n");
 		}
 
-	}while(ct->isEOF || ct->isEmpty );
+	}while(ct->isEOF || ct->isEmpty);
 
-	eval_position_and_size_of_data(ct,&data,FLAG_READ);
-	eval_size_to_manipulate(ct,&data,FLAG_READ);
+	printf("in READ LOOP DONE , to READ -> %d\n",data.sizeToManipulate);
+
 	eval_limit_loops(ct,&data,FLAG_READ);
 
-	//printf("passbyMille READ = %d\n",data.passByMiddle);
-	//printf("firstMaxFor READ : %d\n",(int)data.firstMaxFor);
-	//printf("secondMaxFor READ : %d\n",(int)data.secondMaxFor);
+	printf("READ passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
 
 	limit=data.firstMaxFor;
 
@@ -614,12 +648,13 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 
 	}
 
-	if(ct->start==ct->end){
+	if (ct->start == ct->end) {
+		printf("READ BUFFER EMPTY NOW\n");
 		ct->isEmpty=1;
 	}
 
-	pthread_cond_signal(&ct->condition);
-	pthread_mutex_unlock(&ct->mutex);//sem_post(&ct->semaphore);
+	pthread_cond_signal(&ct->conditionWrite);
+	pthread_mutex_unlock(&ct->mutex);
 	return data.sizeReallyManipulate;
 
 
@@ -645,21 +680,21 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 		int limit;
 		size_t i;
 
-	if(pthread_mutex_lock(&ct->mutex)){//sem_wait(&ct->semaphore);
-		errno=ENOLCK;
+	if(pthread_mutex_lock(&ct->mutex)){
+		//errno=ENOLCK;
 		return -1;
 	}
 
 	if (flag == FLAG_WRITE_EOF) {
 		ct->isEOF = 1;
-		pthread_mutex_unlock(&ct->mutex);//sem_post(&ct->semaphore);
+		pthread_mutex_unlock(&ct->mutex);
 		return count;
 	}
 
 
 	do{
 		if (ct->isEOF) {
-			pthread_mutex_unlock(&ct->mutex);//sem_post(&ct->semaphore);
+			pthread_mutex_unlock(&ct->mutex);
 			errno = EPIPE;
 			return -1;
 		}
@@ -669,21 +704,18 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 
 		if((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
 			//buffer is FULL for the moment or there is not sufisant place
-			if(pthread_cond_wait(&ct->condition, &ct->mutex)){
+			//printf("WRITE BUFFER FULL");
+			if(pthread_cond_wait(&ct->conditionWrite, &ct->mutex)){
 				return -1;
 			}
 		}
-
 
 	}while(ct->isEOF || (ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable);
 
 	eval_limit_loops(ct,&data,FLAG_WRITE);
 
-	/*
-	printf("passbyMille WRITE = %d\n",data.passByMiddle);
-	printf("firstMaxFor WRITE : %d\n",(int)data.firstMaxFor);
-	printf("secondMaxFor WRITE : %d\n",(int)data.secondMaxFor);
-	*/
+	printf("WRITE passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
+
 
 	limit=data.firstMaxFor;
 
@@ -707,8 +739,8 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 		ct->isEmpty=0;
 	}
 
-	pthread_cond_signal(&ct->condition);
-	pthread_mutex_unlock(&ct->mutex);//sem_post(&ct->semaphore);
+	pthread_cond_signal(&ct->conditionRead);
+	pthread_mutex_unlock(&ct->mutex);
 
 	return  data.sizeReallyManipulate;
 

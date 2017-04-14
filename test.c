@@ -50,12 +50,16 @@ short int calcul(struct julia_request * req){
 
 static void * result_thread(void *arg){
 	struct twocons cons = *(struct twocons*)arg;
+
+	printf("START RESULT\n");
+
     while(1) {
         struct julia_reply rep;
         int rc;
 
         rc = conduct_read(cons.two, &rep, sizeof(rep));
         if(rc <= 0) {
+        	printf("ERROR RESULT\n");
         	conduct_write_eof(cons.two);
             return NULL;
         }
@@ -69,6 +73,9 @@ static void * order_thread(void *arg){
 	struct twocons cons = *(struct twocons*)arg;
 	int i=0;
 	//conduct_show(cons.one);
+
+	printf("START ORDER\n");
+
     while(1) {
         struct julia_request req;
         req.number=i;
@@ -80,6 +87,7 @@ static void * order_thread(void *arg){
         int rc;
 		rc = conduct_write(cons.one, &req, sizeof(req));
 		if (rc < 0) {
+			printf("ERROR ORDER\n");
 			conduct_write_eof(cons.one);
 			return NULL;
 		}
@@ -92,6 +100,9 @@ static void * order_thread(void *arg){
 static void * julia_thread(void *arg)
 {
     struct twocons cons = *(struct twocons*)arg;
+
+    printf("START WORKER\n");
+
     while(1) {
         struct julia_request req;
         struct julia_reply rep;
@@ -99,10 +110,12 @@ static void * julia_thread(void *arg)
 
         rc = conduct_read(cons.one, &req, sizeof(req));
         if(rc <= 0) {
+        	printf("ERROR WORKER READ\n");
             conduct_write_eof(cons.two);
             return NULL;
         }
 
+        /*
         rep.x=req.x;
         rep.y=req.y;
         rep.number=req.number;
@@ -111,9 +124,14 @@ static void * julia_thread(void *arg)
 
         rc = conduct_write(cons.two, &rep, sizeof(rep));
         if(rc < 0) {
+        	printf("ERROR WORKER WRITE\n");
             conduct_write_eof(cons.two);
             return NULL;
         }
+
+        */
+
+        printf("WORKER : %d\n",req.number);
     }
 }
 
@@ -152,9 +170,11 @@ int main(int argc, char **argv)
     }
     printf("Running %d worker threads.\n", numthreads);
 
-    pthread_t array[numthreads+2];
+    numthreads=3;
 
-    for(int i = 0; i < numthreads+2; i++) {
+    pthread_t array[numthreads];
+
+    for(int i = 0; i < numthreads; i++) {
 
     	if(i==0){
     		rc = pthread_create(&( array[i]), NULL, order_thread, &cons);
@@ -171,7 +191,7 @@ int main(int argc, char **argv)
         }
 
     }
-    for(int i = 0; i < numthreads+2; i++) {
+    for(int i = 0; i < numthreads; i++) {
 		pthread_join(array[i], NULL);
     }
 

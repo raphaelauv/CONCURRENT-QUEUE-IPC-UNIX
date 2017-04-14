@@ -8,11 +8,14 @@ SRC = conduct.c
 
 OBJ = $(SRC:.c=.o)
 
-EXEC = julia
+EXEC = julia test
 
 all: $(EXEC)
 
 julia: $(OBJ)  julia.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test: $(OBJ)  test.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 .c.o:
