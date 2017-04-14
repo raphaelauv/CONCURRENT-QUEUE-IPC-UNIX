@@ -18,7 +18,7 @@
 
 #define FLAG_WRITE_EOF 1
 #define FLAG_WRITE_NORMAL 2
-#define FLAG_NON_BLOCKING 4
+#define FLAG_O_NONBLOCK 4
 
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
@@ -540,124 +540,137 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 	}
 }
 
-extern inline ssize_t conduct_read_FLAG(struct conduct *c, const void *buf, size_t count,unsigned char flag) {
 
-	if (c == NULL || buf==NULL || count==0) {
-			errno=EINVAL;
+extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
+
+
+	if (c == NULL || iov==NULL || iovcnt==0) {
+		errno=EINVAL;
+		return -1;
+	}
+	const char * buf=iov[0].iov_base;
+	const int count=iov[0].iov_len;
+
+	if (buf == NULL || count == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+
+	char * localBuf = (char *) buf;
+	struct content * ct = (struct content *) c->mmap;
+	struct dataCirularBuffer data = { 0 };
+	data.count = count;
+
+	//for iter at end
+		int k;
+		int limit;
+		size_t i;
+
+
+	if ((flag & FLAG_O_NONBLOCK) != 0) {
+		if(pthread_mutex_trylock(&ct->mutex)){
+			return 0;
+		}
+	}else{
+		if (pthread_mutex_lock(&ct->mutex)) {
+			//errno=ENOLCK;
 			return -1;
 		}
+	}
 
-		char * localBuf = (char *) buf;
-		struct content * ct = (struct content *) c->mmap;
-		struct dataCirularBuffer data = { 0 };
-		data.count = count;
+	int needReEval=0;
 
-		//for iter at end
-			int k;
-			int limit;
-			size_t i;
-
-
-		if ((flag & FLAG_NON_BLOCKING) != 0) {
-			if(pthread_mutex_trylock(&ct->mutex)){
-				return 0;
-			}
-		}else{
-			if (pthread_mutex_lock(&ct->mutex)) {
-				//errno=ENOLCK;
+	do{
+		if(ct->isEOF) {
+			if(pthread_mutex_unlock(&ct->mutex)){
 				return -1;
 			}
+			return 0;
 		}
 
-		int needReEval=0;
+		eval_size_to_manipulate(ct,&data,INTERNAL_FLAG_READ);
+		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
+		if (data.sizeToManipulate > data.sizeAvailable) {
+			data.sizeToManipulate = data.sizeAvailable;
+		}
+		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
+		if (data.sizeToManipulate > data.sizeAvailable) {
+			data.sizeToManipulate = data.sizeAvailable;
+		}
 
-		do{
-			if(ct->isEOF) {
-				if(pthread_mutex_unlock(&ct->mutex)){
+		//printf("in READ EVAL DONE\n");
+
+		if (ct->isEmpty) {
+			//printf("in READ WAIT\n");
+
+			if ((flag & FLAG_O_NONBLOCK) != 0) {
+				errno=EAGAIN;
+				return 0;
+			}else{
+				if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
 					return -1;
 				}
-				return 0;
+				needReEval=1;
 			}
 
-			eval_size_to_manipulate(ct,&data,INTERNAL_FLAG_READ);
-			eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
-			if (data.sizeToManipulate > data.sizeAvailable) {
-				data.sizeToManipulate = data.sizeAvailable;
-			}
-			eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
-			if (data.sizeToManipulate > data.sizeAvailable) {
-				data.sizeToManipulate = data.sizeAvailable;
-			}
-
-			//printf("in READ EVAL DONE\n");
-
-			if (ct->isEmpty) {
-				//printf("in READ WAIT\n");
-
-				if ((flag & FLAG_NON_BLOCKING) != 0) {
-					errno=EAGAIN;
-					return 0;
-				}else{
-					if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
-						return -1;
-					}
-					needReEval=1;
-				}
-
-				//printf("in READ OUT OF  WAIT\n");
-			}else{
-				needReEval=0;
-			}
-
-		}while(ct->isEOF || ct->isEmpty || needReEval);
-
-		eval_limit_loops(ct,&data,INTERNAL_FLAG_READ);
-
-		//printf("READ passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
-
-		limit=data.firstMaxFor;
-
-		for(k=0;k<1+data.passByMiddle;k++){
-
-			if(k==1){
-				ct->start=0;
-				limit=data.secondMaxFor;
-			}
-
-			for (i = ct->start; i < limit; i++) {
-				localBuf[data.sizeReallyManipulate] = ct->buffCircular[i];
-				data.sizeReallyManipulate++;
-				ct->start++;
-			}
-
+			//printf("in READ OUT OF  WAIT\n");
+		}else{
+			needReEval=0;
 		}
 
-		if (ct->start == ct->end) {
-			ct->isEmpty=1;
+	}while(ct->isEOF || ct->isEmpty || needReEval);
+
+	eval_limit_loops(ct,&data,INTERNAL_FLAG_READ);
+
+	//printf("READ passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
+
+	limit=data.firstMaxFor;
+
+	for(k=0;k<1+data.passByMiddle;k++){
+
+		if(k==1){
+			ct->start=0;
+			limit=data.secondMaxFor;
 		}
 
-		if(pthread_cond_signal(&ct->conditionWrite)){
-			return -1;
+		for (i = ct->start; i < limit; i++) {
+			localBuf[data.sizeReallyManipulate] = ct->buffCircular[i];
+			data.sizeReallyManipulate++;
+			ct->start++;
 		}
-		if(pthread_mutex_unlock(&ct->mutex)){
-			return -1;
-		}
-		return data.sizeReallyManipulate;
+
+	}
+
+	if (ct->start == ct->end) {
+		ct->isEmpty=1;
+	}
+
+	if(pthread_cond_signal(&ct->conditionWrite)){
+		return -1;
+	}
+	if(pthread_mutex_unlock(&ct->mutex)){
+		return -1;
+	}
+	return data.sizeReallyManipulate;
 
 
 }
 
-ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 
-	return conduct_read_FLAG(c,buf,count,0);
-
-}
+extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
 
 
-extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, size_t count,unsigned char flag) {
-
-	if (c == NULL || count==0) {
+	if (c == NULL || iovcnt==0) {
 		errno=EINVAL;
+		return -1;
+	}
+
+	const char * buf=iov[0].iov_base;
+	const int count=iov[0].iov_len;
+
+	if (count == 0) {
+		errno = EINVAL;
 		return -1;
 	}
 
@@ -674,7 +687,7 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 		size_t i;
 
 
-	if ((flag & FLAG_NON_BLOCKING) != 0) {
+	if ((flag & FLAG_O_NONBLOCK) != 0) {
 		if(pthread_mutex_trylock(&ct->mutex)){
 			return count;
 		}
@@ -705,7 +718,7 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 		if((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
 			//buffer is FULL for the moment or there is not sufisant place
 
-			if ((flag & FLAG_NON_BLOCKING) != 0) {
+			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				errno=EAGAIN;
 				return count;
 			}else{
@@ -757,10 +770,31 @@ extern inline ssize_t conduct_write_FLAG(struct conduct *c, const void *buf, siz
 
 
 
+
+}
+
+
+ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
+
+	struct iovec iov;
+	iov.iov_base=(void *)buf;
+	iov.iov_len=count;
+
+	return conduct_read_v_flag(c,&iov,1,0);
+
+	//return conduct_read_FLAG(c,buf,count,0);
+
 }
 
 ssize_t conduct_write(struct conduct *c, const void *buf, size_t count) {
-	return conduct_write_FLAG(c,buf,count,FLAG_WRITE_NORMAL);
+
+	struct iovec iov;
+	iov.iov_base=(void *)buf;
+	iov.iov_len=count;
+
+	return conduct_write_v_flag(c,&iov,1,FLAG_WRITE_NORMAL);
+
+	//return conduct_write_FLAG(c,buf,count,FLAG_WRITE_NORMAL);
 }
 
 
@@ -769,7 +803,14 @@ int conduct_write_eof_FLAG(struct conduct *c,unsigned char flag) {
 	int result;
 	char tmp[1];
 	size_t size = 1;
-	result = conduct_write_FLAG(c, &tmp, size, FLAG_WRITE_EOF | flag);
+
+	struct iovec iov;
+	iov.iov_base=(void *)tmp;
+	iov.iov_len=size;
+
+	result = conduct_write_v_flag(c,&iov,1,FLAG_WRITE_NORMAL | flag);
+
+	//result = conduct_write_FLAG(c, &tmp, size, FLAG_WRITE_EOF | flag);
 	if ((result == -1 && errno == EPIPE) || result == 1) {
 		return 0; //EOF is already write , or just been write
 	}
@@ -792,20 +833,28 @@ void conduct_destroy(struct conduct *conduct) {
 
 
 ssize_t conduct_read_nb(struct conduct *c, void *buf, size_t count){
-	return conduct_read_FLAG(c,buf,count,FLAG_NON_BLOCKING);
+	struct iovec iov;
+	iov.iov_base=(void *)buf;
+	iov.iov_len=count;
+
+	return conduct_read_v_flag(c,&iov,1,FLAG_O_NONBLOCK);
 }
 ssize_t conduct_write_nb(struct conduct *c, const void *buf, size_t count){
-	return conduct_write_FLAG(c,buf,count,FLAG_WRITE_NORMAL|FLAG_NON_BLOCKING);
+	struct iovec iov;
+	iov.iov_base=(void *)buf;
+	iov.iov_len=count;
+
+	return conduct_write_v_flag(c,&iov,1,FLAG_WRITE_NORMAL|FLAG_O_NONBLOCK);
 }
 int conduct_write_eof_nb(struct conduct *c){
-	return conduct_write_eof_FLAG(c,FLAG_NON_BLOCKING);
+	return conduct_write_eof_FLAG(c,FLAG_O_NONBLOCK);
 }
 
 
 ssize_t conduct_writev(struct conduct *c,const struct iovec *iov, int iovcnt){
-	return 0;
+	return conduct_write_v_flag(c,iov,iovcnt,FLAG_WRITE_NORMAL);
 }
 ssize_t conduct_readv(struct conduct *c,struct iovec *iov, int iovcnt){
-	return 0;
+	return conduct_read_v_flag(c,iov,iovcnt,0);
 }
 
