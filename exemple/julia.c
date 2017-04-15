@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <gtk/gtk.h>
-#include "conduct.h"
+#include "../conduct.h"
 
 #define ITERATIONS 1000
 #define QSIZE 100
@@ -217,7 +217,7 @@ draw_callback (GtkWidget *widget, cairo_t *cr, gpointer data)
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
-    printf("Repaint done in %.2lfs\n",
+    printf("Repaint done in %.6lfs\n",
            ((double)t1.tv_sec - t0.tv_sec) +
            ((double)t1.tv_nsec - t0.tv_nsec) / 1.0E9);
     return FALSE;
@@ -235,10 +235,10 @@ set_title()
 /* L'utilisateur a fait clic. */
 
 gboolean
-button_callback(GtkWidget *widget, GdkEventButton *event)
+mousse_callback(GtkWidget *widget, GdkEventButton *event,gpointer   user_data)
 {
-    if(event->button == 1)
-        julia_c = toc(event->x, event->y);
+    //if(event->button == 1)
+    julia_c = toc(event->x, event->y);
 
     set_title();
     gtk_widget_queue_draw(widget);
@@ -324,11 +324,13 @@ int main(int argc, char **argv)
     }
 
 
+
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(canvas, "draw", G_CALLBACK(draw_callback), &cons);
-    g_signal_connect(window, "button_press_event",
-                     G_CALLBACK(button_callback), NULL);
+    g_signal_connect(window, "motion-notify-event",
+                     G_CALLBACK(mousse_callback), NULL);
     set_title();
+    gtk_widget_add_events(window, GDK_POINTER_MOTION_MASK);
     gtk_widget_show_all(window);
     gtk_main();
 

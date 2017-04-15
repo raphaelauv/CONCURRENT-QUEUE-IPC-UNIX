@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "conduct.h"
+#include "../conduct.h"
 
 
 int main(int argc, char **argv)

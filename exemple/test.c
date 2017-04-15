@@ -6,7 +6,7 @@
 #include <complex.h>
 #include <unistd.h>
 #include <pthread.h>
-#include "conduct.h"
+#include "../conduct.h"
 
 #define QSIZE 10
 #define COUNT 10
@@ -167,15 +167,15 @@ int main(int argc, char **argv)
     }
     printf("Running %d worker threads.\n", numthreads);
 
-    numthreads=3;
+    numthreads*=10;
 
     pthread_t array[numthreads];
 
     for(int i = 0; i < numthreads; i++) {
 
-    	if(i==0){
+    	if(i%3==0){
     		rc = pthread_create(&( array[i]), NULL, order_thread, &cons);
-    	}else if(i==1){
+    	}else if(i%3==1){
     		rc = pthread_create(&( array[i]), NULL, result_thread , &cons);
     	}else{
     		rc = pthread_create(&( array[i]), NULL, julia_thread, &cons);
