@@ -144,15 +144,17 @@ int conduct_show(struct conduct *c){
 	return 0;
 }
 
-extern inline void clean_Content(struct content * cont) {
+inline void clean_Content(struct content * cont) {
 	if (cont != NULL) {
 		pthread_cond_destroy(&cont->conditionRead);
 		pthread_cond_destroy(&cont->conditionWrite);
 		pthread_mutex_destroy(&cont->mutex);
+		pthread_mutex_destroy(&cont->mutexRead);
+		pthread_mutex_destroy(&cont->mutexWrite);
 	}
 }
 
-extern inline int clean_Conduct(struct conduct * cond,int flag) {
+inline int clean_Conduct(struct conduct * cond,int flag) {
 
 	int error=0;
 	if (cond == NULL) {
@@ -199,7 +201,7 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 	return error;
 }
 
-extern inline int copyFileName(const char * fileName ,struct conduct * cond){
+inline int copyFileName(const char * fileName ,struct conduct * cond){
 
 	cond->fileName = malloc(sizeof(char) * MAXIMUM_SIZE_NAME_CONDUCT);
 	int i=0;
@@ -219,6 +221,47 @@ extern inline int copyFileName(const char * fileName ,struct conduct * cond){
 	return 0;
 }
 
+extern inline int init_Content(struct content * cont) {
+	int result=0;
+
+	pthread_mutexattr_t mutexAttr;
+	pthread_mutexattr_t mutexAttrRead;
+	pthread_mutexattr_t mutexAttrWrite;
+
+	pthread_condattr_t condAttrRead;
+	pthread_condattr_t condAttrWrite;
+
+	result+=pthread_condattr_init(&condAttrRead);
+	result+=pthread_condattr_setpshared(&condAttrRead,PTHREAD_PROCESS_SHARED);
+	result+=pthread_cond_init(&cont->conditionRead, &condAttrRead);
+
+	result+=pthread_condattr_init(&condAttrWrite);
+	result+=pthread_condattr_setpshared(&condAttrWrite,PTHREAD_PROCESS_SHARED);
+	result+=pthread_cond_init(&cont->conditionWrite, &condAttrWrite);
+
+	result+=pthread_mutexattr_init(&mutexAttr);
+	result+=pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
+	result+=pthread_mutex_init(&cont->mutex, &mutexAttr);
+
+	result+=pthread_mutexattr_init(&mutexAttrRead);
+	result+=pthread_mutexattr_setpshared(&mutexAttrRead, PTHREAD_PROCESS_SHARED);
+	result+=pthread_mutex_init(&cont->mutexRead, &mutexAttrRead);
+
+	result+=pthread_mutexattr_init(&mutexAttrWrite);
+	result+=pthread_mutexattr_setpshared(&mutexAttrWrite, PTHREAD_PROCESS_SHARED);
+	result+=pthread_mutex_init(&cont->mutexWrite, &mutexAttrWrite);
+
+
+	pthread_mutexattr_destroy(&mutexAttr);
+	pthread_mutexattr_destroy(&mutexAttrRead);
+	pthread_mutexattr_destroy(&mutexAttrWrite);
+	pthread_condattr_destroy(&condAttrRead);
+	pthread_condattr_destroy(&condAttrWrite);
+
+	return result;
+
+}
+
 struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 	if(c<1 || a<1){
@@ -226,7 +269,6 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		return NULL;
 	}
 
-	int result=0;
 
 	struct content * cont = NULL;
 	struct conduct * cond = NULL;
@@ -300,45 +342,10 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 	cont = (struct content *) cond->mmap;
 
-	result=0;
 
-	pthread_mutexattr_t mutexAttr;
-	pthread_mutexattr_t mutexAttrRead;
-	pthread_mutexattr_t mutexAttrWrite;
-
-	pthread_condattr_t condAttrRead;
-	pthread_condattr_t condAttrWrite;
-
-	result+=pthread_condattr_init(&condAttrRead);
-	result+=pthread_condattr_setpshared(&condAttrRead,PTHREAD_PROCESS_SHARED);
-	result+=pthread_cond_init(&cont->conditionRead, &condAttrRead);
-
-	result+=pthread_condattr_init(&condAttrWrite);
-	result+=pthread_condattr_setpshared(&condAttrWrite,PTHREAD_PROCESS_SHARED);
-	result+=pthread_cond_init(&cont->conditionWrite, &condAttrWrite);
-
-	result+=pthread_mutexattr_init(&mutexAttr);
-	result+=pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
-	result+=pthread_mutex_init(&cont->mutex, &mutexAttr);
-
-	result+=pthread_mutexattr_init(&mutexAttrRead);
-	result+=pthread_mutexattr_setpshared(&mutexAttrRead, PTHREAD_PROCESS_SHARED);
-	result+=pthread_mutex_init(&cont->mutexRead, &mutexAttrRead);
-
-	result+=pthread_mutexattr_init(&mutexAttrWrite);
-	result+=pthread_mutexattr_setpshared(&mutexAttrWrite, PTHREAD_PROCESS_SHARED);
-	result+=pthread_mutex_init(&cont->mutexWrite, &mutexAttrWrite);
-
-	if(result){
+	if(init_Content(cont)){
 		goto cleanup;
 	}
-
-	pthread_mutexattr_destroy(&mutexAttr);
-	pthread_mutexattr_destroy(&mutexAttrRead);
-	pthread_mutexattr_destroy(&mutexAttrWrite);
-	pthread_condattr_destroy(&condAttrRead);
-	pthread_condattr_destroy(&condAttrWrite);
-
 
 	if(pthread_mutex_lock(&cont->mutex)){
 		goto cleanup;
@@ -448,7 +455,7 @@ struct conduct *conduct_open(const char *name) {
 		return NULL;
 }
 
-extern inline void eval_limit_loops(struct dataCirularBuffer * data,int flag){
+inline void eval_limit_loops(struct dataCirularBuffer * data,int flag){
 
 	if(data->passByMiddle){
 		data->firstMaxFor=data->sizeMax;
@@ -676,10 +683,10 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 		if(pthread_mutex_trylock(&ct->mutexRead)){
-			return 0;
+			return -1;
 		}
 		if (pthread_mutex_trylock(&ct->mutex)) {
-			return 0;
+			return -1;
 		}
 	}else{
 		if (pthread_mutex_lock(&ct->mutexRead)) {
@@ -704,7 +711,6 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 			if (pthread_mutex_unlock(&ct->mutexRead)) {
 				return -1;
 			}
-
 			return 0;
 		}
 
@@ -725,7 +731,7 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				errno=EAGAIN;
-				return 0;
+				return -1;
 			}else{
 				if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
 					return -1;
@@ -789,11 +795,11 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 		if(pthread_mutex_trylock(&ct->mutexWrite)){
 			//errno=EAGAIN;
-			return 0;
+			return -1;
 		}
 		if (pthread_mutex_trylock(&ct->mutex)) {
 			//errno=EAGAIN;
-			return 0;
+			return -1;
 		}
 	}else{
 		if (pthread_mutex_lock(&ct->mutexWrite)) {
@@ -829,7 +835,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				errno=EAGAIN;
-				return 0;
+				return -1;
 			}else{
 				if (pthread_cond_wait(&ct->conditionWrite, &ct->mutex)) {
 					return -1;

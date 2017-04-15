@@ -4,13 +4,22 @@ CFLAGS=-g -O3 -ffast-math -Wall -pthread `pkg-config gtk+-3.0 --cflags`
 
 LDFLAGS=`pkg-config gtk+-3.0 --libs` -lm -lrt 
 
-SRC = concurrentconduct.c #conduct.c conduct_aux.c conduct_IO.c
+SRC = conduct.c
 
-OBJ = $(SRC:.c=.o)
+SRC_CONCURRENT = concurrentconduct.c
+
+SRC_ASK = $(SRC)
+
+OBJ = $(SRC_ASK:.c=.o)
 
 EXEC = julia test little_test
 
+EXEC_CONC = $(eval SRC_ASK=$(SRC_CONCURRENT)) $(EXEC)
+
 all: $(EXEC)
+
+conc: $(EXEC_CONC)
+
 
 julia: $(OBJ)  exemple/julia.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
