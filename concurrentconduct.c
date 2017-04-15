@@ -669,11 +669,94 @@ extern inline void apply_loops(struct dataCirularBuffer * data,const struct iove
 }
 
 
+extern inline int lockMutexFlag(struct content * ct, unsigned char flag) {
+
+	if ((flag & FLAG_O_NONBLOCK) != 0) {
+
+		if ((flag & INTERNAL_FLAG_WRITE) != 0) {
+			if (pthread_mutex_trylock(&ct->mutexWrite)) {
+				return -1;
+			}
+		} else {
+			if (pthread_mutex_trylock(&ct->mutexRead)) {
+				return -1;
+			}
+		}
+
+	} else {
+
+		if ((flag & INTERNAL_FLAG_WRITE) != 0) {
+			if (pthread_mutex_lock(&ct->mutexWrite)) {
+				return -1;
+			}
+		} else {
+			if (pthread_mutex_lock(&ct->mutexRead)) {
+				return -1;
+			}
+		}
+
+	}
+
+	return 0;
+}
+
+extern inline int unlockMutexFlag(struct content * ct,unsigned char flag){
+
+	if ((flag & INTERNAL_FLAG_WRITE) != 0) {
+		if (pthread_mutex_unlock(&ct->mutexWrite)) {
+			return -1;
+		}
+	} else {
+		if (pthread_mutex_unlock(&ct->mutexRead)) {
+			return -1;
+		}
+	}
+	return 0;
+
+}
+
+extern inline int unlockMutexAll(struct content * ct,unsigned char flag){
+
+	/*
+	if(unlockMutexFlag(ct,flag)){
+		return -1;
+	}
+	*/
+
+	if(pthread_mutex_unlock(&ct->mutex)){
+		return -1;
+	}
+	return 0;
+}
+
+extern inline int lockMutexAll(struct content * ct,unsigned char flag){
+
+	/*
+	 if(lockMutexFlag(ct,flag)){
+	 	 return -1;
+	 }
+	 */
+
+	if ((flag & FLAG_O_NONBLOCK) != 0) {
+
+		if (pthread_mutex_trylock(&ct->mutex)) {
+			return -1;
+		}
+	} else {
+
+		if (pthread_mutex_lock(&ct->mutex)) {
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+
 extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
 
 	struct content * ct = (struct content *) c->mmap;
 	struct dataCirularBuffer data = { 0 };
-
 
 
 	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
@@ -681,36 +764,16 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 		return -1;
 	}
 
-	if ((flag & FLAG_O_NONBLOCK) != 0) {
-		if(pthread_mutex_trylock(&ct->mutexRead)){
-			return -1;
-		}
-		if (pthread_mutex_trylock(&ct->mutex)) {
-			return -1;
-		}
-	}else{
-		if (pthread_mutex_lock(&ct->mutexRead)) {
-			//errno=ENOLCK;
-			return -1;
-		}
-		if (pthread_mutex_lock(&ct->mutex)) {
-			//errno=ENOLCK;
-			return -1;
-		}
+	if (lockMutexAll(ct, flag | INTERNAL_FLAG_READ)) {
+		return -1;
 	}
 
 	int needReEval=0;
 
-
-
 	do{
 		if(ct->isEOF) {
-			if (pthread_mutex_unlock(&ct->mutex)) {
-				return -1;
-			}
-			if (pthread_mutex_unlock(&ct->mutexRead)) {
-				return -1;
-			}
+			unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
+
 			return 0;
 		}
 
@@ -731,9 +794,13 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				errno=EAGAIN;
+
+				unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
+
 				return -1;
 			}else{
 				if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
+					unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
 					return -1;
 				}
 				needReEval=1;
@@ -773,13 +840,19 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	if(pthread_cond_signal(&ct->conditionWrite)){
 		return -1;
 	}
-	if(pthread_mutex_unlock(&ct->mutexRead)){
+
+	/*
+	if(unlockMutexFlag(ct,flag|INTERNAL_FLAG_READ)){
 		return -1;
 	}
+	*/
+
 	return data.sizeReallyManipulate;
 
 
 }
+
+
 
 extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
 
@@ -791,38 +864,19 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
-
-	if ((flag & FLAG_O_NONBLOCK) != 0) {
-		if(pthread_mutex_trylock(&ct->mutexWrite)){
-			//errno=EAGAIN;
-			return -1;
-		}
-		if (pthread_mutex_trylock(&ct->mutex)) {
-			//errno=EAGAIN;
-			return -1;
-		}
-	}else{
-		if (pthread_mutex_lock(&ct->mutexWrite)) {
-			//errno=ENOLCK;
-			return -1;
-		}
-		if (pthread_mutex_lock(&ct->mutex)) {
-			//errno=ENOLCK;
-			return -1;
-		}
+	if(lockMutexAll(ct,flag|INTERNAL_FLAG_WRITE)){
+		return -1;
 	}
 
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
-		pthread_mutex_unlock(&ct->mutexWrite);
+
 		return 0;
 	}
 
 	do{
-
 		if (ct->isEOF) {
-			pthread_mutex_unlock(&ct->mutex);
-			pthread_mutex_unlock(&ct->mutexWrite);
+			unlockMutexAll(ct,flag);
 			errno = EPIPE;
 			return -1;
 		}
@@ -835,9 +889,11 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				errno=EAGAIN;
+				unlockMutexAll(ct,flag);
 				return -1;
 			}else{
 				if (pthread_cond_wait(&ct->conditionWrite, &ct->mutex)) {
+					unlockMutexAll(ct,flag);
 					return -1;
 				}
 			}
@@ -876,9 +932,12 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
-	if (pthread_mutex_unlock(&ct->mutexWrite)) {
+	/*
+	if(unlockMutexFlag(ct, flag | INTERNAL_FLAG_WRITE)){
 		return -1;
 	}
+	*/
+
 
 	return  data.sizeReallyManipulate;
 

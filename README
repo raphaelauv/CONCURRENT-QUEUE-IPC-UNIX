@@ -1,0 +1,13 @@
+CONCURRENT ATOMIC CIRCULAR-BUFFER PIPE  (thread safe)
+
+	not lock-free
+
+	Multipe writer and Multiple reader can use at the same time the Circular-Buffer
+
+	2 implementation possible : MPMC is by default
+
+			MPMC ->  multiple producer pultiple consumer solutions
+			SPSC ->  single producer single consumer solutions
+
+
+NON BLOCKING ATOMIC CIRCULAR-BUFFER PIPE  (thread safe) but not CONCURRENT

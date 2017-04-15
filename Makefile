@@ -14,11 +14,12 @@ OBJ = $(SRC_ASK:.c=.o)
 
 EXEC = julia test little_test
 
-EXEC_CONC = $(eval SRC_ASK=$(SRC_CONCURRENT)) $(EXEC)
+all: 
+	echo 'type : make drone   |or type : make client'
 
-all: $(EXEC)
+simple: $(EXEC)
 
-conc: $(EXEC_CONC)
+conc: $(eval SRC_ASK=$(SRC_CONCURRENT)) $(EXEC)
 
 
 julia: $(OBJ)  exemple/julia.o
