@@ -6,8 +6,8 @@ CONCURRENT ATOMIC CIRCULAR-BUFFER PIPE  (thread safe)
 
 	2 implementation possible : MPMC is by default
 
-			MPMC ->  multiple producer pultiple consumer solutions
+			MPMC ->  multiple producer multiple consumer solutions
 			SPSC ->  single producer single consumer solutions
 
-
-NON BLOCKING ATOMIC CIRCULAR-BUFFER PIPE  (thread safe) but not CONCURRENT
+			all have :
+			NON BLOCKING call(thread safe) but not CONCURRENT

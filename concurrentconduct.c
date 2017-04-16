@@ -22,6 +22,8 @@
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
 
+#define mode_Single_Reader_And_Writer 1
+
 struct dataCirularBuffer{
 
 	size_t sizeMax;
@@ -53,10 +55,12 @@ struct conduct{
 
 struct content {
 	pthread_mutex_t mutex;
-	pthread_mutex_t mutexWrite;
-	pthread_mutex_t mutexRead;
 	pthread_cond_t conditionRead;
 	pthread_cond_t conditionWrite;
+
+	//for SPSC solution
+	pthread_mutex_t mutexWrite;
+	pthread_mutex_t mutexRead;
 
 	int size_mmap;
 	size_t sizeMax;
@@ -149,8 +153,12 @@ inline void clean_Content(struct content * cont) {
 		pthread_cond_destroy(&cont->conditionRead);
 		pthread_cond_destroy(&cont->conditionWrite);
 		pthread_mutex_destroy(&cont->mutex);
-		pthread_mutex_destroy(&cont->mutexRead);
-		pthread_mutex_destroy(&cont->mutexWrite);
+
+		if(mode_Single_Reader_And_Writer){
+			pthread_mutex_destroy(&cont->mutexRead);
+			pthread_mutex_destroy(&cont->mutexWrite);
+		}
+		
 	}
 }
 
@@ -224,39 +232,43 @@ inline int copyFileName(const char * fileName ,struct conduct * cond){
 extern inline int init_Content(struct content * cont) {
 	int result=0;
 
-	pthread_mutexattr_t mutexAttr;
-	pthread_mutexattr_t mutexAttrRead;
-	pthread_mutexattr_t mutexAttrWrite;
-
 	pthread_condattr_t condAttrRead;
-	pthread_condattr_t condAttrWrite;
-
 	result+=pthread_condattr_init(&condAttrRead);
 	result+=pthread_condattr_setpshared(&condAttrRead,PTHREAD_PROCESS_SHARED);
 	result+=pthread_cond_init(&cont->conditionRead, &condAttrRead);
+	pthread_condattr_destroy(&condAttrRead);
 
+	pthread_condattr_t condAttrWrite;
 	result+=pthread_condattr_init(&condAttrWrite);
 	result+=pthread_condattr_setpshared(&condAttrWrite,PTHREAD_PROCESS_SHARED);
 	result+=pthread_cond_init(&cont->conditionWrite, &condAttrWrite);
+	pthread_condattr_destroy(&condAttrWrite);
 
+	pthread_mutexattr_t mutexAttr;
 	result+=pthread_mutexattr_init(&mutexAttr);
 	result+=pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
 	result+=pthread_mutex_init(&cont->mutex, &mutexAttr);
-
-	result+=pthread_mutexattr_init(&mutexAttrRead);
-	result+=pthread_mutexattr_setpshared(&mutexAttrRead, PTHREAD_PROCESS_SHARED);
-	result+=pthread_mutex_init(&cont->mutexRead, &mutexAttrRead);
-
-	result+=pthread_mutexattr_init(&mutexAttrWrite);
-	result+=pthread_mutexattr_setpshared(&mutexAttrWrite, PTHREAD_PROCESS_SHARED);
-	result+=pthread_mutex_init(&cont->mutexWrite, &mutexAttrWrite);
+	pthread_mutexattr_destroy(&mutexAttr);	
 
 
-	pthread_mutexattr_destroy(&mutexAttr);
-	pthread_mutexattr_destroy(&mutexAttrRead);
-	pthread_mutexattr_destroy(&mutexAttrWrite);
-	pthread_condattr_destroy(&condAttrRead);
-	pthread_condattr_destroy(&condAttrWrite);
+	if(mode_Single_Reader_And_Writer){
+
+		pthread_mutexattr_t mutexAttrRead;
+		pthread_mutexattr_t mutexAttrWrite;
+
+		result+=pthread_mutexattr_init(&mutexAttrRead);
+		result+=pthread_mutexattr_setpshared(&mutexAttrRead, PTHREAD_PROCESS_SHARED);
+		result+=pthread_mutex_init(&cont->mutexRead, &mutexAttrRead);
+
+		result+=pthread_mutexattr_init(&mutexAttrWrite);
+		result+=pthread_mutexattr_setpshared(&mutexAttrWrite, PTHREAD_PROCESS_SHARED);
+		result+=pthread_mutex_init(&cont->mutexWrite, &mutexAttrWrite);
+
+		pthread_mutexattr_destroy(&mutexAttrRead);
+		pthread_mutexattr_destroy(&mutexAttrWrite);
+
+	}
+		
 
 	return result;
 
@@ -716,12 +728,11 @@ extern inline int unlockMutexFlag(struct content * ct,unsigned char flag){
 }
 
 extern inline int unlockMutexAll(struct content * ct,unsigned char flag){
-
-	/*
-	if(unlockMutexFlag(ct,flag)){
-		return -1;
+	if(mode_Single_Reader_And_Writer){
+		if(unlockMutexFlag(ct,flag)){
+			return -1;
+		}
 	}
-	*/
 
 	if(pthread_mutex_unlock(&ct->mutex)){
 		return -1;
@@ -731,12 +742,13 @@ extern inline int unlockMutexAll(struct content * ct,unsigned char flag){
 
 extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 
-	/*
-	 if(lockMutexFlag(ct,flag)){
-	 	 return -1;
-	 }
-	 */
 
+	if(mode_Single_Reader_And_Writer){
+		if(lockMutexFlag(ct,flag)){
+	 	 	return -1;
+	 	}	
+	}
+	
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 
 		if (pthread_mutex_trylock(&ct->mutex)) {
@@ -841,11 +853,13 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 		return -1;
 	}
 
-	/*
-	if(unlockMutexFlag(ct,flag|INTERNAL_FLAG_READ)){
-		return -1;
+
+	if(mode_Single_Reader_And_Writer){
+	
+		if(unlockMutexFlag(ct,flag|INTERNAL_FLAG_READ)){
+			return -1;
+		}
 	}
-	*/
 
 	return data.sizeReallyManipulate;
 
@@ -932,11 +946,11 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
-	/*
-	if(unlockMutexFlag(ct, flag | INTERNAL_FLAG_WRITE)){
-		return -1;
+	if(mode_Single_Reader_And_Writer){
+		if(unlockMutexFlag(ct, flag | INTERNAL_FLAG_WRITE)){
+			return -1;
+		}
 	}
-	*/
 
 
 	return  data.sizeReallyManipulate;
