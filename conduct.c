@@ -694,6 +694,9 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 			//printf("in READ WAIT\n");
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
+				if(pthread_mutex_unlock(&ct->mutex)){
+					return -1;
+				}
 				errno=EAGAIN;
 				return 0;
 			}else{
@@ -774,6 +777,9 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 			//buffer is FULL for the moment or there is not sufisant place
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
+				if(pthread_mutex_unlock(&ct->mutex)){
+					return -1;
+				}
 				errno=EAGAIN;
 				return 0;
 			}else{

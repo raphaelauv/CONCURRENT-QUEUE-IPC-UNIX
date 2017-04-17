@@ -58,9 +58,11 @@ struct content {
 	pthread_cond_t conditionRead;
 	pthread_cond_t conditionWrite;
 
+	#if mode_Single_Reader_And_Writer
 	//for SPSC solution
 	pthread_mutex_t mutexWrite;
 	pthread_mutex_t mutexRead;
+	#endif
 
 	int size_mmap;
 	size_t sizeMax;
@@ -154,10 +156,12 @@ inline void clean_Content(struct content * cont) {
 		pthread_cond_destroy(&cont->conditionWrite);
 		pthread_mutex_destroy(&cont->mutex);
 
-		if(mode_Single_Reader_And_Writer){
+		#if mode_Single_Reader_And_Writer
+		//if(mode_Single_Reader_And_Writer){
 			pthread_mutex_destroy(&cont->mutexRead);
 			pthread_mutex_destroy(&cont->mutexWrite);
-		}
+		//}
+		#endif
 		
 	}
 }
@@ -250,8 +254,8 @@ extern inline int init_Content(struct content * cont) {
 	result+=pthread_mutex_init(&cont->mutex, &mutexAttr);
 	pthread_mutexattr_destroy(&mutexAttr);	
 
-
-	if(mode_Single_Reader_And_Writer){
+	#if mode_Single_Reader_And_Writer
+	//if(mode_Single_Reader_And_Writer){
 
 		pthread_mutexattr_t mutexAttrRead;
 		pthread_mutexattr_t mutexAttrWrite;
@@ -267,7 +271,8 @@ extern inline int init_Content(struct content * cont) {
 		pthread_mutexattr_destroy(&mutexAttrRead);
 		pthread_mutexattr_destroy(&mutexAttrWrite);
 
-	}
+	//}
+	#endif
 		
 
 	return result;
@@ -680,7 +685,7 @@ extern inline void apply_loops(struct dataCirularBuffer * data,const struct iove
 	}
 }
 
-
+#if mode_Single_Reader_And_Writer
 extern inline int lockMutexFlag(struct content * ct, unsigned char flag) {
 
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
@@ -712,6 +717,7 @@ extern inline int lockMutexFlag(struct content * ct, unsigned char flag) {
 	return 0;
 }
 
+
 extern inline int unlockMutexFlag(struct content * ct,unsigned char flag){
 
 	if ((flag & INTERNAL_FLAG_WRITE) != 0) {
@@ -726,13 +732,16 @@ extern inline int unlockMutexFlag(struct content * ct,unsigned char flag){
 	return 0;
 
 }
+#endif
 
 extern inline int unlockMutexAll(struct content * ct,unsigned char flag){
-	if(mode_Single_Reader_And_Writer){
+	#if mode_Single_Reader_And_Writer
+	//if(mode_Single_Reader_And_Writer){
 		if(unlockMutexFlag(ct,flag)){
 			return -1;
 		}
-	}
+	//}
+	#endif
 
 	if(pthread_mutex_unlock(&ct->mutex)){
 		return -1;
@@ -742,26 +751,36 @@ extern inline int unlockMutexAll(struct content * ct,unsigned char flag){
 
 extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 
-
-	if(mode_Single_Reader_And_Writer){
+	#if mode_Single_Reader_And_Writer
+	//if(mode_Single_Reader_And_Writer){
 		if(lockMutexFlag(ct,flag)){
 	 	 	return -1;
-	 	}	
-	}
+	 	}
+	//}
+	#endif
 	
+	int error=0;
+
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 
 		if (pthread_mutex_trylock(&ct->mutex)) {
+			error=1;
 			return -1;
 		}
 	} else {
 
 		if (pthread_mutex_lock(&ct->mutex)) {
-			return -1;
+			error=1;
 		}
 	}
 
-	return 0;
+	#if mode_Single_Reader_And_Writer
+	if(error){
+		unlockMutexFlag(ct,flag);
+	}
+	#endif
+
+	return error;
 }
 
 
@@ -853,13 +872,14 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 		return -1;
 	}
 
-
-	if(mode_Single_Reader_And_Writer){
+	#if mode_Single_Reader_And_Writer
+	//if(mode_Single_Reader_And_Writer){
 	
 		if(unlockMutexFlag(ct,flag|INTERNAL_FLAG_READ)){
 			return -1;
 		}
-	}
+	//}
+	#endif
 
 	return data.sizeReallyManipulate;
 
@@ -946,11 +966,13 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
-	if(mode_Single_Reader_And_Writer){
+	#if mode_Single_Reader_And_Writer
+	//if(mode_Single_Reader_And_Writer){
 		if(unlockMutexFlag(ct, flag | INTERNAL_FLAG_WRITE)){
 			return -1;
 		}
-	}
+	//}
+	#endif
 
 
 	return  data.sizeReallyManipulate;
