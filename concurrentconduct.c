@@ -22,7 +22,9 @@
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
 
-#define mode_Single_Reader_And_Writer 0
+#define mode_Single_Reader_And_Writer 1
+
+#define mode_Multiple_Reader_And_Writer ! mode_Single_Reader_And_Writer
 
 struct dataCirularBuffer{
 
@@ -69,6 +71,11 @@ struct content {
 	size_t sizeAtom;
 	size_t start;
 	size_t end;
+	
+	
+	size_t tmpStart;
+	size_t tmpEnd;
+	
 
 	char isEOF;
 	char isEmpty;
@@ -376,6 +383,11 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	cont->sizeMax=c;
 	cont->sizeAtom=a;
 	cont->size_mmap=cond->size_mmap;
+
+	
+	cont->tmpStart=0;
+	cont->tmpEnd=0;
+	
 
 	/*
 	printf("CONT  -> %p\n",cont);
@@ -853,18 +865,19 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	}while(ct->isEOF || ct->isEmpty || needReEval);
 
-	data.start=ct->start;
+	data.start=ct->tmpStart;
 	data.end=ct->end;
 	data.isEOF=ct->isEOF;
 	data.isEmpty=ct->isEmpty;
 	data.sizeMax=ct->sizeMax;
 	data.buffCircular=ct->buffCircular;
 
-	ct->start += data.sizeToManipulate;
-	ct->start %= data.sizeMax;
-	if (ct->start == ct->end) {
-		ct->isEmpty = 1;
-	}
+
+	int localTmpStart;
+	
+	localTmpStart= data.start + data.sizeToManipulate;
+	localTmpStart %= data.sizeMax;
+	ct->tmpStart=localTmpStart;
 
 	if (pthread_mutex_unlock(&ct->mutex)) {
 		return -1;
@@ -876,6 +889,19 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	apply_loops(&data,iov,INTERNAL_FLAG_READ);
 
+	if (pthread_mutex_lock(&ct->mutex)) {
+		return -1;
+	}
+
+	ct->start=localTmpStart;
+
+	if (ct->start == ct->end) {
+		ct->isEmpty = 1;
+	}
+
+	if (pthread_mutex_unlock(&ct->mutex)) {
+		return -1;
+	}
 
 	if(pthread_cond_signal(&ct->conditionWrite)){
 		return -1;
@@ -947,18 +973,19 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 	}while(ct->isEOF || (ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable);
 
 	data.start=ct->start;
-	data.end=ct->end;
+	data.end=ct->tmpEnd;
 	data.isEOF=ct->isEOF;
 	data.isEmpty=ct->isEmpty;
 	data.sizeMax=ct->sizeMax;
 	data.buffCircular=ct->buffCircular;
 
 
-	ct->end += data.sizeToManipulate;
-	ct->end %= data.sizeMax;
-	if (data.sizeToManipulate > 0) {
-		ct->isEmpty = 0;
-	}
+	int localTmpEnd;
+	
+	localTmpEnd= data.end + data.sizeToManipulate;
+	localTmpEnd %= data.sizeMax;
+	ct->tmpEnd=localTmpEnd;
+
 
 	if (pthread_mutex_unlock(&ct->mutex)) {
 		return -1;
@@ -969,6 +996,22 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 	//printf("WRITE passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
 
 	apply_loops(&data,iov,INTERNAL_FLAG_WRITE);
+
+	if (pthread_mutex_lock(&ct->mutex)) {
+		return -1;
+	}
+
+	
+	ct->end=localTmpEnd;
+
+	if (data.sizeToManipulate > 0) {
+		ct->isEmpty = 0;
+	}
+
+	if (pthread_mutex_unlock(&ct->mutex)) {
+		return -1;
+	}
+
 
 
 	if(pthread_cond_signal(&ct->conditionRead)){
