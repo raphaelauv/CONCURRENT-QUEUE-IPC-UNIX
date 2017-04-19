@@ -386,6 +386,11 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	int decalage=(sizeof(struct content));
 	cont->buffCircular=(volatile atomic_char *)cont + decalage ;
 
+	size_t i=0;
+	for(; i<cont->sizeMax;i++){
+		atomic_init(&(cont->buffCircular[i]),0);
+	}
+
 	if(pthread_mutex_unlock(&cont->mutex)){
 		goto cleanup;
 	}
