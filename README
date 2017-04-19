@@ -1,3 +1,8 @@
+strace -c -f ./julia 
+time ./julia 
+
+
+
 CONCURRENT ATOMIC CIRCULAR-BUFFER PIPE  (thread safe)
 
 	not lock-free

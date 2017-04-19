@@ -22,7 +22,7 @@
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
 
-#define mode_Single_Reader_And_Writer 1
+#define mode_Single_Reader_And_Writer 0
 
 struct dataCirularBuffer{
 
@@ -31,7 +31,7 @@ struct dataCirularBuffer{
 	size_t end;
 	char isEOF;
 	char isEmpty;
-	char *buffCircular;
+	volatile atomic_char *buffCircular;
 
 	char passByMiddle;
 	size_t count;
@@ -48,7 +48,7 @@ struct dataCirularBuffer{
 };
 
 struct conduct{
-	int size_mmap;
+	size_t size_mmap;
 	char * fileName;
 	void * mmap;
 };
@@ -64,7 +64,7 @@ struct content {
 	pthread_mutex_t mutexRead;
 	#endif
 
-	int size_mmap;
+	size_t size_mmap;
 	size_t sizeMax;
 	size_t sizeAtom;
 	size_t start;
@@ -72,7 +72,8 @@ struct content {
 
 	char isEOF;
 	char isEmpty;
-	char *buffCircular;
+	volatile atomic_char * buffCircular;
+	//char *buffCircular;
 };
 
 int conduct_show(struct conduct *c){
@@ -88,10 +89,10 @@ int conduct_show(struct conduct *c){
 	array[(ct->sizeMax)]='\0';
 	array2[(ct->sizeMax)]='\0';
 
-	int start=0;
-	int end=0;
-	int isEOF=0;
-	int isEmpty=0;
+	size_t start=0;
+	size_t end=0;
+	char isEOF=0;
+	char isEmpty=0;
 
 	if(pthread_mutex_lock(&ct->mutex)){
 		return -1;
@@ -124,7 +125,7 @@ int conduct_show(struct conduct *c){
 		array2[end]='E';
 	}
 
-	int newJump=0;
+	char newJump=0;
 
 	printf("\n"LIMIT_SHOW"\n%s\n%s\n",array,array2);
 	if(isEmpty){
@@ -383,7 +384,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	*/
 
 	int decalage=(sizeof(struct content));
-	cont->buffCircular=(void *)cont + decalage ;
+	cont->buffCircular=(volatile atomic_char *)cont + decalage ;
 
 	if(pthread_mutex_unlock(&cont->mutex)){
 		goto cleanup;
@@ -670,10 +671,13 @@ extern inline void apply_loops(struct dataCirularBuffer * data,const struct iove
 			}
 
 			if(modeRead){
-				data->currentBuf[currentIter]=data->buffCircular[i];
+				data->currentBuf[currentIter]=atomic_load(&(data->buffCircular[i]));
+				//data->currentBuf[currentIter]=data->buffCircular[i];
 				data->start++;
 			}else{
-				data->buffCircular[i]=data->currentBuf[currentIter];
+				atomic_store(&(data->buffCircular[i]),data->currentBuf[currentIter]);
+
+				//data->buffCircular[i]=data->currentBuf[currentIter];
 				data->end++;
 			}
 
@@ -754,6 +758,7 @@ extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 	#if mode_Single_Reader_And_Writer
 	//if(mode_Single_Reader_And_Writer){
 		if(lockMutexFlag(ct,flag)){
+			errno=EWOULDBLOCK;
 	 	 	return -1;
 	 	}
 	//}
@@ -776,6 +781,7 @@ extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 
 	#if mode_Single_Reader_And_Writer
 	if(error){
+		errno=EWOULDBLOCK;
 		unlockMutexFlag(ct,flag);
 	}
 	#endif
@@ -804,7 +810,6 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	do{
 		if(ct->isEOF) {
 			unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
-
 			return 0;
 		}
 
@@ -824,8 +829,7 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 			//printf("in READ WAIT\n");
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
-				errno=EAGAIN;
-
+				errno=EWOULDBLOCK;
 				unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
 
 				return -1;
@@ -922,7 +926,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 			//buffer is FULL for the moment or there is not sufisant place
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
-				errno=EAGAIN;
+				errno=EWOULDBLOCK;
 				unlockMutexAll(ct,flag);
 				return -1;
 			}else{

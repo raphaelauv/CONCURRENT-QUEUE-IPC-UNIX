@@ -38,7 +38,7 @@ struct dataCirularBuffer{
 };
 
 struct conduct{
-	int size_mmap;
+	size_t size_mmap;
 	char * fileName;
 	void * mmap;
 };
@@ -48,7 +48,7 @@ struct content {
 	pthread_cond_t conditionRead;
 	pthread_cond_t conditionWrite;
 
-	int size_mmap;
+	size_t size_mmap;
 	size_t sizeMax;
 	size_t sizeAtom;
 	size_t start;
@@ -72,10 +72,10 @@ int conduct_show(struct conduct *c){
 	array[(ct->sizeMax)]='\0';
 	array2[(ct->sizeMax)]='\0';
 
-	int start=0;
-	int end=0;
-	int isEOF=0;
-	int isEmpty=0;
+	size_t start=0;
+	size_t end=0;
+	char isEOF=0;
+	char isEmpty=0;
 
 	if(pthread_mutex_lock(&ct->mutex)){
 		return -1;
@@ -651,7 +651,6 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	struct dataCirularBuffer data = { 0 };
 
 
-
 	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
 		printf("ERROR\n");
 		return -1;
@@ -659,11 +658,11 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 		if(pthread_mutex_trylock(&ct->mutex)){
+			errno=EWOULDBLOCK;
 			return 0;
 		}
 	}else{
 		if (pthread_mutex_lock(&ct->mutex)) {
-			//errno=ENOLCK;
 			return -1;
 		}
 	}
@@ -695,6 +694,7 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				if(pthread_mutex_unlock(&ct->mutex)){
+					errno=EWOULDBLOCK;
 					return -1;
 				}
 				errno=EAGAIN;
@@ -747,11 +747,11 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 		if(pthread_mutex_trylock(&ct->mutex)){
+			errno=EWOULDBLOCK;
 			return -1;
 		}
 	}else{
 		if (pthread_mutex_lock(&ct->mutex)) {
-			//errno=ENOLCK;
 			return -1;
 		}
 	}
@@ -778,6 +778,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				if(pthread_mutex_unlock(&ct->mutex)){
+					errno=EWOULDBLOCK;
 					return -1;
 				}
 				errno=EAGAIN;

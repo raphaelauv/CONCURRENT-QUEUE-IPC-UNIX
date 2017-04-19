@@ -1,26 +1,18 @@
-CC=gcc
-
-CFLAGS=-g -O3 -ffast-math -Wall -pthread `pkg-config gtk+-3.0 --cflags`
+CC=gcc 
+VERSION=-std=gnu11
+CFLAGS= $(VERSION) -g -O3 -ffast-math -Wall -pthread `pkg-config gtk+-3.0 --cflags`
 
 LDFLAGS=`pkg-config gtk+-3.0 --libs` -lm -lrt 
 
-SRC = conduct.c
+SRC_ASK = concurrentconduct.c #conduct.c
 
-SRC_CONCURRENT = concurrentconduct.c
+SRC = $(SRC_ASK)
+OBJ = $(SRC_ASK:.c=.o)	
 
-SRC_ASK = $(SRC)
 
-OBJ = $(SRC_ASK:.c=.o)
+EXEC =  julia test little_test
 
-EXEC = julia test little_test
-
-all: 
-	echo 'type : make drone   |or type : make client'
-
-simple: $(EXEC)
-
-conc: $(eval SRC_ASK=$(SRC_CONCURRENT)) $(EXEC)
-
+all:$(EXEC)
 
 julia: $(OBJ)  exemple/julia.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)

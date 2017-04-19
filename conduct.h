@@ -1,6 +1,7 @@
 #ifndef CONDUCT_H_
 #define CONDUCT_H
 
+#include <stdatomic.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
