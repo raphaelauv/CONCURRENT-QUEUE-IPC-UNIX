@@ -29,6 +29,7 @@
 struct dataCirularBuffer{
 
 	size_t sizeMax;
+	size_t sizeAtom;
 	size_t start;
 	size_t end;
 	char isEOF;
@@ -221,6 +222,7 @@ inline int clean_Conduct(struct conduct * cond,int flag) {
 	return error;
 }
 
+//inline int copyFileName(const char * fileName ,struct conduct * cond);
 inline int copyFileName(const char * fileName ,struct conduct * cond){
 
 	cond->fileName = malloc(sizeof(char) * MAXIMUM_SIZE_NAME_CONDUCT);
@@ -521,11 +523,11 @@ inline void eval_limit_loops(struct dataCirularBuffer * data,int flag){
 
 }
 
-extern inline void eval_size_to_manipulate(struct content * ct,struct dataCirularBuffer * data,int flag) {
+extern inline void eval_size_to_manipulate(struct dataCirularBuffer * data,int flag) {
 
 
-	if (data->count >ct->sizeAtom) {
-		data->sizeToManipulate = ct->sizeAtom;
+	if (data->count >data->sizeAtom) {
+		data->sizeToManipulate = data->sizeAtom;
 
 		if(flag==INTERNAL_FLAG_WRITE){
 			return;
@@ -822,6 +824,11 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 		return -1;
 	}
 
+
+	data.sizeMax=ct->sizeMax;
+	data.sizeAtom=ct->sizeAtom;
+	data.buffCircular=ct->buffCircular;
+
 	int needReEval=0;
 
 	do{
@@ -830,7 +837,7 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 			return 0;
 		}
 
-		eval_size_to_manipulate(ct,&data,INTERNAL_FLAG_READ);
+		eval_size_to_manipulate(&data,INTERNAL_FLAG_READ);
 		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
@@ -869,8 +876,6 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	data.end=ct->end;
 	data.isEOF=ct->isEOF;
 	data.isEmpty=ct->isEmpty;
-	data.sizeMax=ct->sizeMax;
-	data.buffCircular=ct->buffCircular;
 
 
 	int localTmpStart;
@@ -939,9 +944,14 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
-
+		unlockMutexAll(ct,flag);//TODO put in if
 		return 0;
 	}
+
+	data.sizeMax=ct->sizeMax;
+	data.sizeAtom=ct->sizeAtom;
+	data.buffCircular=ct->buffCircular;
+
 
 	do{
 		if (ct->isEOF) {
@@ -950,7 +960,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 			return -1;
 		}
 
-		eval_size_to_manipulate(ct,&data,INTERNAL_FLAG_WRITE);
+		eval_size_to_manipulate(&data,INTERNAL_FLAG_WRITE);
 		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_WRITE);
 
 		if((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
@@ -966,8 +976,6 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 					return -1;
 				}
 			}
-
-
 		}
 
 	}while(ct->isEOF || (ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable);
@@ -976,9 +984,6 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 	data.end=ct->tmpEnd;
 	data.isEOF=ct->isEOF;
 	data.isEmpty=ct->isEmpty;
-	data.sizeMax=ct->sizeMax;
-	data.buffCircular=ct->buffCircular;
-
 
 	int localTmpEnd;
 	
