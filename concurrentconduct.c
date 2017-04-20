@@ -32,7 +32,7 @@ struct dataCirularBuffer{
 	size_t sizeAtom;
 	size_t start;
 	size_t end;
-	char isEOF;
+	//char isEOF;
 	char isEmpty;
 	volatile atomic_char *buffCircular;
 
@@ -812,9 +812,13 @@ extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
 
 	struct content * ct = (struct content *) c->mmap;
+
+	if (atomic_load(&(ct->isEOF))) {
+		errno = EPIPE;
+		return -1;
+	}
+
 	struct dataCirularBuffer data = { 0 };
-
-
 	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
 		printf("ERROR\n");
 		return -1;
@@ -832,9 +836,12 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	int needReEval=0;
 
 	do{
-		if(ct->isEOF) {
+
+
+		if(ct->isEOF) { //atomic_load(&(ct->isEOF))
+			errno = EPIPE;
 			unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
-			return 0;
+			return -1;
 		}
 
 		eval_size_to_manipulate(&data,INTERNAL_FLAG_READ);
@@ -847,15 +854,11 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 			data.sizeToManipulate = data.sizeAvailable;
 		}
 
-		//printf("in READ EVAL DONE\n");
-
 		if (ct->isEmpty) {
-			//printf("in READ WAIT\n");
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				errno=EWOULDBLOCK;
 				unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
-
 				return -1;
 			}else{
 				if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
@@ -865,7 +868,6 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 				needReEval=1;
 			}
 
-			//printf("in READ OUT OF  WAIT\n");
 		}else{
 			needReEval=0;
 		}
@@ -874,7 +876,7 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	data.start=ct->tmpStart;
 	data.end=ct->end;
-	data.isEOF=ct->isEOF;
+	//data.isEOF=ct->isEOF;
 	data.isEmpty=ct->isEmpty;
 
 
@@ -931,6 +933,21 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
 
 	struct content * ct = (struct content *) c->mmap;
+
+	/*
+	if ((flag & FLAG_WRITE_EOF) != 0) {
+		atomic_store(&(ct->isEOF), 1);
+		return 0;
+	}
+	*/
+
+	if (atomic_load(&(ct->isEOF))) {
+		errno = EPIPE;
+		return -1;
+	}
+
+
+
 	struct dataCirularBuffer data = { 0 };
 
 	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
@@ -942,11 +959,13 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
+
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
-		unlockMutexAll(ct,flag);//TODO put in if
+		unlockMutexAll(ct,flag);
 		return 0;
 	}
+
 
 	data.sizeMax=ct->sizeMax;
 	data.sizeAtom=ct->sizeAtom;
@@ -982,7 +1001,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 	data.start=ct->start;
 	data.end=ct->tmpEnd;
-	data.isEOF=ct->isEOF;
+	//data.isEOF=ct->isEOF;
 	data.isEmpty=ct->isEmpty;
 
 	int localTmpEnd;

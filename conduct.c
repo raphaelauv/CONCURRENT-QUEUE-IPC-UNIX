@@ -648,17 +648,21 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
 
 	struct content * ct = (struct content *) c->mmap;
+
+	
+	if (atomic_load(&(ct->isEOF))) {
+		errno = EPIPE;
+		return -1;
+	}
+
 	struct dataCirularBuffer data = { 0 };
-
-
 	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
-		printf("ERROR\n");
+		//TODO errno
 		return -1;
 	}
 
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 		if(pthread_mutex_trylock(&ct->mutex)){
-			errno=EWOULDBLOCK;
 			return 0;
 		}
 	}else{
@@ -674,7 +678,8 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 			if(pthread_mutex_unlock(&ct->mutex)){
 				return -1;
 			}
-			return 0;
+			errno = EPIPE;
+			return -1;
 		}
 
 		eval_size_to_manipulate(ct,&data,INTERNAL_FLAG_READ);
@@ -687,26 +692,23 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 			data.sizeToManipulate = data.sizeAvailable;
 		}
 
-		//printf("in READ EVAL DONE\n");
 
 		if (ct->isEmpty) {
-			//printf("in READ WAIT\n");
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				if(pthread_mutex_unlock(&ct->mutex)){
-					errno=EWOULDBLOCK;
 					return -1;
 				}
-				errno=EAGAIN;
+				errno=EWOULDBLOCK;
 				return 0;
 			}else{
 				if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
+					pthread_mutex_unlock(&ct->mutex);
 					return -1;
 				}
 				needReEval=1;
 			}
 
-			//printf("in READ OUT OF  WAIT\n");
 		}else{
 			needReEval=0;
 		}
@@ -737,10 +739,23 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
 
 	struct content * ct = (struct content *) c->mmap;
+
+	/*
+	if ((flag & FLAG_WRITE_EOF) !=0 ) {
+		atomic_store(&(ct->isEOF),1);
+		return 0;
+	}
+	*/
+
+	if (atomic_load(&(ct->isEOF))) {
+		errno = EPIPE;
+		return -1;
+	}
+
+
 	struct dataCirularBuffer data = { 0 };
 
 	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
-		printf("ERROR\n");
 		return -1;
 	}
 
@@ -756,12 +771,12 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		}
 	}
 
+	
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
 		pthread_mutex_unlock(&ct->mutex);
 		return 0;
 	}
-
 
 	do{
 		if (ct->isEOF) {
@@ -778,13 +793,13 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				if(pthread_mutex_unlock(&ct->mutex)){
-					errno=EWOULDBLOCK;
 					return -1;
 				}
-				errno=EAGAIN;
+				errno=EWOULDBLOCK;
 				return 0;
 			}else{
 				if (pthread_cond_wait(&ct->conditionWrite, &ct->mutex)) {
+					pthread_mutex_unlock(&ct->mutex);
 					return -1;
 				}
 			}
@@ -853,7 +868,7 @@ int conduct_write_eof_FLAG(struct conduct *c,unsigned char flag) {
 }
 
 int conduct_write_eof(struct conduct *c) {
-	return conduct_write_eof_FLAG(c,0);
+	return conduct_write_eof_FLAG(c,FLAG_WRITE_EOF);
 }
 
 void conduct_close(struct conduct *conduct) {

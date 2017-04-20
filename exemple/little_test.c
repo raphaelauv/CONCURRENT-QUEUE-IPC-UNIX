@@ -41,6 +41,23 @@ int main(int argc, char **argv)
 
 	conduct_show(c);
 
+
+	
+	conduct_write_eof(c);
+	printf("PUSH EOF !\n");
+
+	char buff4[11]={0};
+	int toto=conduct_read(c,buff4,10);
+
+	if(toto<0){
+		printf("ERROR after READ -> GOOD\n");
+		return 0;
+	}else{
+		printf("NO ERROR after READ -> BAD\n");
+	}
+	
+
+
 	return 0;
 
 	//conduct_close(c);
@@ -93,11 +110,13 @@ int main(int argc, char **argv)
 
 	conduct_show(c);
 
-	char buff4[11]={0};
-	conduct_read(c,buff4,10);
 	printf("\nDEDANS : %s\n\n",buff4);
 	conduct_show(c);
 
 
+
 	printf("SIZE WRITE :%d\n",size);
+
+
+
 }

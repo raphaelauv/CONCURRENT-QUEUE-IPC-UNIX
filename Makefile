@@ -4,7 +4,7 @@ CFLAGS= $(VERSION) -g -O3 -ffast-math -Wall -pthread `pkg-config gtk+-3.0 --cfla
 
 LDFLAGS=`pkg-config gtk+-3.0 --libs` -lm -lrt 
 
-SRC_ASK = concurrentconduct.c #conduct.c
+SRC_ASK = conduct.c #concurrentconduct.c conduct.c
 
 SRC = $(SRC_ASK)
 OBJ = $(SRC_ASK:.c=.o)	
