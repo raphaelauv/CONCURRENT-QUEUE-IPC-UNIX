@@ -5,7 +5,7 @@
 int main(int argc, char **argv)
 {
 
-	struct conduct *c = conduct_create("TOTO", 10,10);
+	struct conduct *c = conduct_create("TOTO", 5,10);
 	conduct_show(c);
 
 	struct iovec iov [10];
@@ -16,8 +16,8 @@ int main(int argc, char **argv)
 		iov[i].iov_len=1;
 	}
 
-	conduct_writev(c,iov,10);
-
+	int sizeWrite=conduct_writev(c,iov,10);
+	printf("WRITE : %d\n",sizeWrite);
 	conduct_show(c);
 
 	struct iovec iov2 [10];
@@ -29,11 +29,11 @@ int main(int argc, char **argv)
 		iov2[i].iov_len=1;
 	}
 
-	conduct_readv(c,iov2,10);
+	int sizeRead=	conduct_readv(c,iov2,10);
 
 
-	printf("READ : ");
-	for(int i=0;i<10;i++){
+	printf("READ : %d\n",sizeRead);
+	for(int i=0;i<sizeRead;i++){
 		char * p=(char *) iov2[i].iov_base;
 		printf("%c",*p);
 	}

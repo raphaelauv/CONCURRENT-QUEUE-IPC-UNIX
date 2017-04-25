@@ -866,6 +866,7 @@ retry_it:
 
 		if(ct->isEOF) { //atomic_load(&(ct->isEOF))
 			errno = EPIPE;
+			printf("READ EOF\n");
 			unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
 			return -1;
 		}
@@ -958,7 +959,7 @@ retry_it:
 	#if mode_Single_Reader_And_Writer
 	//if(mode_Single_Reader_And_Writer){
 	
-		if(unlockMutexFlag(ct,flag|INTERNAL_FLAG_READ)){
+		if(unlockMutexFlag(ct,INTERNAL_FLAG_READ)){
 			return -1;
 		}
 	//}
@@ -966,6 +967,7 @@ retry_it:
 
 		if(data.sizeReallyManipulate<data.count){
 			retry=1;
+			printf("WE RETRY !\n");
 			goto retry_it;
 		}
 
@@ -1007,7 +1009,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 retry_it:
 	if (retry) {
-		if (lockMutexAll(ct, INTERNAL_FLAG_READ | FLAG_O_NONBLOCK)) {
+		if (lockMutexAll(ct, INTERNAL_FLAG_WRITE | FLAG_O_NONBLOCK)) {
 			errno=0;
 			return data.sizeReallyManipulate;
 		}
@@ -1015,6 +1017,7 @@ retry_it:
 
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
+		printf("EOF PUT INSIDE\n");
 		unlockMutexAll(ct,flag);
 		return 0;
 	}
@@ -1118,7 +1121,7 @@ retry_it:
 
 	#if mode_Single_Reader_And_Writer
 	//if(mode_Single_Reader_And_Writer){
-		if(unlockMutexFlag(ct, flag | INTERNAL_FLAG_WRITE)){
+		if(unlockMutexFlag(ct,INTERNAL_FLAG_WRITE)){
 			return -1;
 		}
 	//}
@@ -1161,7 +1164,7 @@ int conduct_write_eof_FLAG(struct conduct *c,unsigned char flag) {
 	iov.iov_base=(void *)tmp;
 	iov.iov_len=size;
 
-	result = conduct_write_v_flag(c,&iov,1,FLAG_WRITE_NORMAL | flag);
+	result = conduct_write_v_flag(c,&iov,1,FLAG_WRITE_EOF | flag);
 
 	if ((result == -1 && errno == EPIPE) || result == 1) {
 		return 0; //EOF is already write , or just been write

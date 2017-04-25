@@ -859,7 +859,7 @@ int conduct_write_eof_FLAG(struct conduct *c,unsigned char flag) {
 	iov.iov_base=(void *)tmp;
 	iov.iov_len=size;
 
-	result = conduct_write_v_flag(c,&iov,1,FLAG_WRITE_NORMAL | flag);
+	result = conduct_write_v_flag(c,&iov,1,FLAG_WRITE_EOF | flag);
 
 	if ((result == -1 && errno == EPIPE) || result == 1) {
 		return 0; //EOF is already write , or just been write
@@ -868,7 +868,7 @@ int conduct_write_eof_FLAG(struct conduct *c,unsigned char flag) {
 }
 
 int conduct_write_eof(struct conduct *c) {
-	return conduct_write_eof_FLAG(c,FLAG_WRITE_EOF);
+	return conduct_write_eof_FLAG(c,0);
 }
 
 void conduct_close(struct conduct *conduct) {
