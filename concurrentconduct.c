@@ -48,6 +48,11 @@ struct dataCirularBuffer{
 	char * currentBuf;
 	size_t currentCount;
 
+
+	//for MPMC solution
+	//size_t endValueTolock;
+	//size_t startValueTolock;
+
 };
 
 struct conduct{
@@ -65,6 +70,12 @@ struct content {
 	//for SPSC solution
 	pthread_mutex_t mutexWrite;
 	pthread_mutex_t mutexRead;
+	#endif
+
+	#if mode_Multiple_Reader_And_Writer
+	//for MPMC solution
+	pthread_cond_t conditionRead_ToValide;
+	pthread_cond_t conditionWrite_ToValidate;
 	#endif
 
 	size_t size_mmap;
@@ -172,6 +183,12 @@ inline void clean_Content(struct content * cont) {
 		//}
 		#endif
 		
+		#if mode_Multiple_Reader_And_Writer
+		pthread_cond_destroy(&cont->conditionRead_ToValide);
+		pthread_cond_destroy(&cont->conditionWrite_ToValidate);
+		#endif
+
+
 	}
 }
 
@@ -284,6 +301,22 @@ extern inline int init_Content(struct content * cont) {
 	//}
 	#endif
 		
+
+	#if mode_Multiple_Reader_And_Writer
+	pthread_condattr_t condAttrRead_ToValidate;
+	result+=pthread_condattr_init(&condAttrRead_ToValidate);
+	result+=pthread_condattr_setpshared(&condAttrRead_ToValidate,PTHREAD_PROCESS_SHARED);
+	result+=pthread_cond_init(&cont->conditionRead_ToValide, &condAttrRead_ToValidate);
+	pthread_condattr_destroy(&condAttrRead_ToValidate);
+
+
+	pthread_condattr_t condAttrWrite_ToValidate;
+	result+=pthread_condattr_init(&condAttrWrite_ToValidate);
+	result+=pthread_condattr_setpshared(&condAttrWrite_ToValidate,PTHREAD_PROCESS_SHARED);
+	result+=pthread_cond_init(&cont->conditionWrite_ToValidate, &condAttrWrite_ToValidate);
+	pthread_condattr_destroy(&condAttrWrite_ToValidate);
+	#endif
+
 
 	return result;
 
@@ -523,92 +556,74 @@ inline void eval_limit_loops(struct dataCirularBuffer * data,int flag){
 
 }
 
-extern inline void eval_size_to_manipulate(struct dataCirularBuffer * data,int flag) {
+extern inline void eval_size_to_manipulate(struct dataCirularBuffer * data) {
 
-
-	if (data->count >data->sizeAtom) {
+	if (data->count > data->sizeAtom) {
 		data->sizeToManipulate = data->sizeAtom;
-
-		if(flag==INTERNAL_FLAG_WRITE){
-			return;
-		}
-	}else{
-		if(flag==INTERNAL_FLAG_WRITE){
-			data->sizeToManipulate = data->count;
-			return;
-		}
-		data->sizeToManipulate=data->count;
-
+	} else {
+		data->sizeToManipulate = data->count;
 	}
 }
 
-extern inline void eval_position_and_size_of_data(struct content * ct,struct dataCirularBuffer * data,int flag) {
 
-	if(ct->isEmpty){
+extern inline void WRITE_eval_position_and_size_of_data(struct dataCirularBuffer * data) {
 
-		if(flag==INTERNAL_FLAG_WRITE){
-			data->sizeAvailable = ct->sizeMax;
-
-			if ( (ct->end + data->sizeToManipulate) >= ct->sizeMax) {
-				data->passByMiddle = 1;
-			}
-
-		}else{
-			data->sizeAvailable = 0;
+	if (data->isEmpty) {
+		data->sizeAvailable = data->sizeMax;
+		if ((data->end + data->sizeToManipulate) >= data->sizeMax) {
+			data->passByMiddle = 1;
 		}
-
 		return;
 
-	}else{
-		if (ct->start == ct->end) {
-
-			if (flag == INTERNAL_FLAG_WRITE) {
-				data->sizeAvailable =0;
-
-			} else {
-				data->sizeAvailable = ct->sizeMax;
-
-				if ((ct->start + data->sizeToManipulate) >= ct->sizeMax) {
-					data->passByMiddle = 1;
-				}
-
-			}
-
-
+	} else {
+		if (data->start == data->end) {
+			data->sizeAvailable = 0;
 			return;
 		}
 	}
 
-	if (ct->start < ct->end) {
+	if (data->start < data->end) {
 
-		if(flag==INTERNAL_FLAG_READ){
-			data->sizeAvailable = ct->end - ct->start;
-			data->passByMiddle=0;
-		}else {
-			data->sizeAvailable = (ct->sizeMax - ct->end) + ct->start;
-
-			if(ct->sizeMax - ct->end <= data->sizeToManipulate){
-				data->passByMiddle=1;
-			}
+		data->sizeAvailable = (data->sizeMax - data->end) + data->start;
+		if (data->sizeMax - data->end <= data->sizeToManipulate) {
+			data->passByMiddle = 1;
 		}
 
+	} else {
+		data->sizeAvailable = data->start - data->end;
+	}
+
+}
+
+extern inline void READ_eval_position_and_size_of_data(struct dataCirularBuffer * data) {
+	if (data->isEmpty) {
+		data->sizeAvailable = 0;
 		return;
 
-	}else{
+	} else {
+		if (data->start == data->end) {
+			data->sizeAvailable = data->sizeMax;
 
-		if (flag == INTERNAL_FLAG_READ) {
-			data->sizeAvailable = (ct->sizeMax - ct->start) + ct->end;
-
-			if(ct->sizeMax - ct->start <= data->sizeToManipulate){
+			if ((data->start + data->sizeToManipulate) >= data->sizeMax) {
 				data->passByMiddle = 1;
 			}
-
-		}else{
-			data->sizeAvailable = ct->start -ct->end;
+			return;
 		}
-
-		return;
 	}
+
+	if (data->start < data->end) {
+
+		data->sizeAvailable = data->end - data->start;
+		data->passByMiddle = 0;
+
+	} else {
+
+		data->sizeAvailable = (data->sizeMax - data->start) + data->end;
+		if (data->sizeMax - data->start <= data->sizeToManipulate) {
+			data->passByMiddle = 1;
+		}
+	}
+
 }
 
 extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
@@ -777,7 +792,6 @@ extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 	#if mode_Single_Reader_And_Writer
 	//if(mode_Single_Reader_And_Writer){
 		if(lockMutexFlag(ct,flag)){
-			errno=EWOULDBLOCK;
 	 	 	return -1;
 	 	}
 	//}
@@ -788,13 +802,12 @@ extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 
 		if (pthread_mutex_trylock(&ct->mutex)) {
-			error=1;
-			return -1;
+			error=-1;
 		}
 	} else {
 
 		if (pthread_mutex_lock(&ct->mutex)) {
-			error=1;
+			error=-1;
 		}
 	}
 
@@ -810,6 +823,8 @@ extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 
 
 extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
+
+	int retry=0;
 
 	struct content * ct = (struct content *) c->mmap;
 
@@ -828,6 +843,14 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 		return -1;
 	}
 
+retry_it:
+	if(retry){
+		if(lockMutexAll(ct,INTERNAL_FLAG_READ|FLAG_O_NONBLOCK)){
+			errno=0;
+			return data.sizeReallyManipulate;
+		}
+	}
+
 
 	data.sizeMax=ct->sizeMax;
 	data.sizeAtom=ct->sizeAtom;
@@ -836,6 +859,9 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	int needReEval=0;
 
 	do{
+		data.start=ct->tmpStart;
+		data.end=ct->end;
+		data.isEmpty=ct->isEmpty;
 
 
 		if(ct->isEOF) { //atomic_load(&(ct->isEOF))
@@ -844,12 +870,12 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 			return -1;
 		}
 
-		eval_size_to_manipulate(&data,INTERNAL_FLAG_READ);
-		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
+		eval_size_to_manipulate(&data);
+		READ_eval_position_and_size_of_data(&data);
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
 		}
-		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
+		READ_eval_position_and_size_of_data(&data);
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
 		}
@@ -874,11 +900,9 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	}while(ct->isEOF || ct->isEmpty || needReEval);
 
-	data.start=ct->tmpStart;
-	data.end=ct->end;
-	//data.isEOF=ct->isEOF;
-	data.isEmpty=ct->isEmpty;
+	size_t localStart=ct->start;
 
+	//data.isEOF=ct->isEOF;
 
 	int localTmpStart;
 	
@@ -900,6 +924,17 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 		return -1;
 	}
 
+	#if mode_Multiple_Reader_And_Writer
+	while(ct->start!=localStart){
+
+		//printf("READ LOCK car j'attends une ecriture : %d pour %d\n",ct->start,localStart);
+		if (pthread_cond_wait(&ct->conditionRead_ToValide, &ct->mutex)) {
+			unlockMutexAll(ct, flag);
+			return -1;
+		}
+	}
+	#endif
+
 	ct->start=localTmpStart;
 
 	if (ct->start == ct->end) {
@@ -910,7 +945,13 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 		return -1;
 	}
 
-	if(pthread_cond_signal(&ct->conditionWrite)){
+	#if mode_Multiple_Reader_And_Writer
+	if(pthread_cond_broadcast(&ct->conditionRead_ToValide)){
+		return -1;
+	}
+	#endif
+
+	if(pthread_cond_broadcast(&ct->conditionWrite)){
 		return -1;
 	}
 
@@ -923,6 +964,11 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	//}
 	#endif
 
+		if(data.sizeReallyManipulate<data.count){
+			retry=1;
+			goto retry_it;
+		}
+
 	return data.sizeReallyManipulate;
 
 
@@ -931,6 +977,8 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 
 extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
+
+	int retry=0;
 
 	struct content * ct = (struct content *) c->mmap;
 
@@ -946,8 +994,6 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
-
-
 	struct dataCirularBuffer data = { 0 };
 
 	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
@@ -959,6 +1005,13 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
+retry_it:
+	if (retry) {
+		if (lockMutexAll(ct, INTERNAL_FLAG_READ | FLAG_O_NONBLOCK)) {
+			errno=0;
+			return data.sizeReallyManipulate;
+		}
+	}
 
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
@@ -973,16 +1026,22 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 
 	do{
+
+		data.start=ct->start;
+		data.end=ct->tmpEnd;
+		data.isEmpty=ct->isEmpty;
+
 		if (ct->isEOF) {
 			unlockMutexAll(ct,flag);
 			errno = EPIPE;
 			return -1;
 		}
 
-		eval_size_to_manipulate(&data,INTERNAL_FLAG_WRITE);
-		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_WRITE);
+		eval_size_to_manipulate(&data);
 
-		if((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
+		WRITE_eval_position_and_size_of_data(&data);
+
+		if((data.end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
 			//buffer is FULL for the moment or there is not sufisant place
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
@@ -997,12 +1056,12 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 			}
 		}
 
-	}while(ct->isEOF || (ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable);
+	}while(ct->isEOF || (data.end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable);
 
-	data.start=ct->start;
-	data.end=ct->tmpEnd;
+	size_t localEnd=ct->end;
+
 	//data.isEOF=ct->isEOF;
-	data.isEmpty=ct->isEmpty;
+
 
 	int localTmpEnd;
 	
@@ -1025,7 +1084,18 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
-	
+	#if mode_Multiple_Reader_And_Writer
+	while(ct->end!=localEnd){
+
+		//printf("WRITE LOCK car j'attends une ecriture : %d pour %d\n",ct->end,localEnd)
+
+		if (pthread_cond_wait(&ct->conditionWrite_ToValidate, &ct->mutex)) {
+			unlockMutexAll(ct, flag);
+			return -1;
+		}
+	}
+	#endif
+
 	ct->end=localTmpEnd;
 
 	if (data.sizeToManipulate > 0) {
@@ -1036,9 +1106,13 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
+	#if mode_Multiple_Reader_And_Writer
+	if(pthread_cond_broadcast(&ct->conditionWrite_ToValidate)){
+		return -1;
+	}
+	#endif
 
-
-	if(pthread_cond_signal(&ct->conditionRead)){
+	if(pthread_cond_broadcast(&ct->conditionRead)){
 		return -1;
 	}
 
@@ -1050,6 +1124,10 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 	//}
 	#endif
 
+	if (data.sizeReallyManipulate < data.count) {
+		retry = 1;
+		goto retry_it;
+	}
 
 	return  data.sizeReallyManipulate;
 
