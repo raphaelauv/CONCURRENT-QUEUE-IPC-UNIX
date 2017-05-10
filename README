@@ -1,18 +1,30 @@
-strace -c -f ./julia 
-time ./julia 
+ATOMIC CIRCULAR-BUFFER PIPE  IMPLEMENTATIONS (UNIX)
+
+	The buffer have an ATOMIC
+
+		
+	-thread safe
+	-NON BLOCKING
+	-VECTORED read,write
 
 
+	------------------------------------------------------------
 
-CONCURRENT ATOMIC CIRCULAR-BUFFER PIPE  (thread safe)
+	1) conduct.c is not concurrent and not lock-free
 
-	not lock-free
+			MODE_MEMCPY at TRUE use memcpy standard C library function else it don't
 
-	Multipe writer and Multiple reader can use at the same time the Circular-Buffer
+	------------------------------------------------------------
 
-	2 implementation possible : MPMC is by default
+	2) concurrentconduct.c is concurrent and not lock-free  (Writer and Reader can use at the same time the Circular-Buffer)
+
+			it use ATOMIC OPERATIONS
+			there is 2 implementation possible :
 
 			MPMC ->  multiple producer multiple consumer solutions
 			SPSC ->  single producer single consumer solutions
 
-			all have :
-			NON BLOCKING call(thread safe) but not CONCURRENT
+
+
+strace -c -f ./julia
+time ./julia

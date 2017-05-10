@@ -13,6 +13,10 @@
 #define QSIZE 100
 #define COUNT 100
 
+#define MODE_FILE 1
+
+#define MODE_ANONYM !MODE_FILE
+
 /* Voir la fonction toc ci-dessous. */
 
 double scale = 1024 / 4.0;
@@ -288,14 +292,23 @@ int main(int argc, char **argv)
     canvas = gtk_drawing_area_new();
     gtk_container_add(GTK_CONTAINER(window), canvas);
 
-    cons.one = conduct_create(NULL, sizeof(struct julia_request),
+
+    char * name1=NULL;
+    char * name2=NULL;
+
+    #if MODE_FILE
+        name1="conductUN";
+        name2="conductTWO";
+    #endif
+
+    cons.one = conduct_create(name1, sizeof(struct julia_request),
                               QSIZE * sizeof(struct julia_request));
     if(cons.one == NULL) {
         perror("conduct_create");
         exit(1);
     }
 
-    cons.two = conduct_create(NULL, sizeof(struct julia_reply),
+    cons.two = conduct_create(name2, sizeof(struct julia_reply),
                               QSIZE * sizeof(struct julia_reply));
 
     if(cons.two == NULL) {

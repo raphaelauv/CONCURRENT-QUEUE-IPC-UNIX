@@ -8,6 +8,8 @@
 
 #include "conduct.h"
 
+#define MODE_MEMCPY 1
+
 #define FILE_mode 0666
 
 #define FLAG_CLEAN_DESTROY 1
@@ -22,32 +24,33 @@
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
 
-#define MODE_MEMCPY 1
-
 struct dataCirularBuffer{
-	char passByMiddle;
-	size_t count;
-	size_t sizeAvailable;
-	size_t firstMaxFor;
-	size_t secondMaxFor;
-	size_t sizeToManipulate;
-	ssize_t sizeReallyManipulate;
+	char passByMiddle;						// Boolean , TRUE if the read or write operation is going to pass from the end to the start of the buffer
+	size_t count;							// Size the User want to read or write on the CircularBuffer
+	size_t sizeAvailable;					// Size available to read or write on the CircularBuffer
+	size_t firstMaxFor;						// Value of the limit to read or write on the CircularBuffer
+	size_t secondMaxFor;					// only when passByMiddle is TRUE
+	size_t sizeToManipulate;				// Size we going to read or write on the CircularBuffer with the actual mutex take
+	ssize_t sizeReallyManipulate;			// Size total read or write on the CircularBuffer with all the hypothetical mutex took
 
-	//for iter at end
-	char * currentBuf;
-	size_t currentCount;
+	//indices for the loop read or write
+	char * current_iov_base;				// Pointer to the current IOV array
+	size_t current_iov_len;					// Size of the current IOV array
+	size_t allcurrent_iov_len;				// Addition of the sizes of all the arrays of IOV already seen and the current own
+	int currentIndexIOV;					// Index of current Array of IOV
+	int currentIterIOV;						// Index of current position to read or write in the array of IOV
 
 };
 
 struct conduct{
-	size_t size_mmap;
-	char * fileName;
-	void * mmap;
+	size_t size_mmap;						// Size of the MAPED MEMORY
+	char * fileName;						// NULL or Name of the file maped
+	void * mmap;							// Pointer on the start of MAPED MEMORY
 };
 
 struct content {
-	pthread_mutex_t mutex;
-	pthread_cond_t conditionRead;
+	pthread_mutex_t mutex;					// MUTEX of the CircularBuffer
+	pthread_cond_t conditionRead;			//
 	pthread_cond_t conditionWrite;
 
 	size_t size_mmap;
@@ -567,10 +570,12 @@ extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct 
 		}
 
 		//for iter at end
-		data->currentBuf=iov[0].iov_base;
-		data->currentCount=iov[0].iov_len;
+		data->current_iov_base=iov[0].iov_base;
+		data->current_iov_len=iov[0].iov_len;
 
-
+		data->allcurrent_iov_len=data->current_iov_len;
+		data->currentIndexIOV=0;
+		data->currentIterIOV=0;
 		size_t sizeTotal=0;
 
 		for (int i = 0; i < iovcnt; i++) {
@@ -586,10 +591,6 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 	int k=0;
 	int limit;
 	size_t i;
-
-	int currentIndexIOV=0;
-	int currentIter=0;
-	int allCurrentCounts=data->currentCount;
 
 	char modeRead=0;
 
@@ -626,49 +627,58 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 		#else//NO MEMCPY VERSION
 		for ( ; i < limit; i++) {
 		#endif
-			if (data->sizeReallyManipulate == allCurrentCounts) {
-				currentIter = 0;
-				currentIndexIOV++;
-				data->currentBuf = iov[currentIndexIOV].iov_base;
-				data->currentCount = iov[currentIndexIOV].iov_len;
-				allCurrentCounts += data->currentCount;
+			if (data->sizeReallyManipulate == data->allcurrent_iov_len) {
+				data->currentIterIOV = 0;
+				data->currentIndexIOV++;
+				data->current_iov_base = iov[data->currentIndexIOV].iov_base;
+				data->current_iov_len = iov[data->currentIndexIOV].iov_len;
+				data->allcurrent_iov_len += data->current_iov_len;
 			}
 
 			#if MODE_MEMCPY
-			int sizeToManipulate = data->currentCount;
-			if (sizeToManipulate > limit) {
-				sizeToManipulate = limit;
+			int sizeLimit = data->current_iov_len;
+			if (sizeLimit > limit) {
+				sizeLimit = limit;
 			}
 			#endif
 
 			if(modeRead){
 				#if MODE_MEMCPY
-				memcpy( &(data->currentBuf[currentIter]),  &(ct->buffCircular[i]),sizeToManipulate);
-				currentIter+=sizeToManipulate;
-				ct->start+=sizeToManipulate;
+				memcpy( &(data->current_iov_base[data->currentIterIOV]),  &(ct->buffCircular[i]),sizeLimit);
+				data->currentIterIOV+=sizeLimit;
+				ct->start+=sizeLimit;
 				#else //NO MEMCPY VERSION
-				data->currentBuf[currentIter]=ct->buffCircular[i];
+				data->current_iov_base[data->currentIterIOV]=ct->buffCircular[i];
 				ct->start++;
 				#endif
 			}else{
 				#if MODE_MEMCPY
-				memcpy( &(ct->buffCircular[i]), &(data->currentBuf[currentIter]),sizeToManipulate);
-				currentIter+=sizeToManipulate;
-				ct->end+=sizeToManipulate;
+				memcpy( &(ct->buffCircular[i]), &(data->current_iov_base[data->currentIterIOV]),sizeLimit);
+				data->currentIterIOV+=sizeLimit;
+				ct->end+=sizeLimit;
 				#else //NO MEMCPY VERSION
-				ct->buffCircular[i]=data->currentBuf[currentIter];
+				ct->buffCircular[i]=data->current_iov_base[data->currentIterIOV];
 				ct->end++;
 				#endif
 			}
 
 			#if MODE_MEMCPY
-			i+=sizeToManipulate;
-			data->sizeReallyManipulate+=sizeToManipulate;
+			i+=sizeLimit;
+			data->sizeReallyManipulate+=sizeLimit;
 			#else //NO MEMCPY VERSION
-			currentIter++;
+			data->currentIterIOV++;
 			data->sizeReallyManipulate++;
 			#endif
 
+		}
+
+		//WE NEED TO VERIF AGAIN AFTER THE FOR , IF THE GOTO RETRY SUCCES
+		if (data->sizeReallyManipulate == data->allcurrent_iov_len) {
+			data->currentIterIOV = 0;
+			data->currentIndexIOV++;
+			data->current_iov_base = iov[data->currentIndexIOV].iov_base;
+			data->current_iov_len = iov[data->currentIndexIOV].iov_len;
+			data->allcurrent_iov_len += data->current_iov_len;
 		}
 
 	}
@@ -711,6 +721,7 @@ retry_it:
 			errno=0;
 			return data.sizeReallyManipulate;
 		}
+		//printf("RETRY SUCCES\n");
 	}
 
 	int needReEval=0;
@@ -742,6 +753,7 @@ retry_it:
 					return -1;
 				}
 				errno = 0;
+				printf("READ EMPTY\n");
 				return data.sizeReallyManipulate;
 			}
 
@@ -785,8 +797,9 @@ retry_it:
 
 
 	if (data.sizeReallyManipulate < data.count) {
+		//printf("SIZE ALREADY READ : %d\n",data.sizeReallyManipulate);
+		//printf("TAILLE %d , contenu : %s\n",iov->iov_len,iov->iov_base);
 		retry = 1;
-		printf("WE RETRY !\n");
 		goto retry_it;
 	}
 
@@ -835,13 +848,11 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 retry_it:
 
 	if(retry){
-		conduct_show(c);
+		//conduct_show(c);
 		if(pthread_mutex_trylock(&ct->mutex)){
 			errno=0;
 			return data.sizeReallyManipulate;
 		}
-		printf("RETRY SUCCES\n");
-
 	}
 	
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {

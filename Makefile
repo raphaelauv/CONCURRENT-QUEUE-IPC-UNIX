@@ -10,7 +10,7 @@ SRC = $(SRC_ASK)
 OBJ = $(SRC_ASK:.c=.o)	
 
 
-EXEC =  julia test little_test
+EXEC =  julia test little_test test_vectored_IO
 
 all:$(EXEC)
 
@@ -18,6 +18,9 @@ julia: $(OBJ)  exemple/julia.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test: $(OBJ)  exemple/test.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_vectored_IO: $(OBJ)  exemple/test_vectored_IO.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 little_test	: $(OBJ)  exemple/little_test.o
