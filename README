@@ -1,28 +1,50 @@
-ATOMIC CIRCULAR-BUFFER PIPE  IMPLEMENTATIONS (UNIX)
+Author:  raphaelauv
 
-	The buffer have an ATOMIC
+--------------------------------------------------------
+*  ATOMIC CIRCULAR-BUFFER PIPE IMPLEMENTATIONS (UNIX)  *
+--------------------------------------------------------
 
-		
-	-thread safe
-	-NON BLOCKING
-	-VECTORED read,write
+	- Custom Atomic Guaranteed limit
+	- Thread Safe ( Multiprocessing or Multithreading)
+	- Blocking 		read,write,write_eof
+	- Non Blocking 	read,write,write_eof
+	- Vectored 		read,write,write_eof
 
+	- Compliant operations (try to read and write as far as ask by user while respecting atomic limit)
+	- Pipe can be anonymous or maped in a file
+	- Code Correctness (All systemCall and Mutex Operations return values are tested)
+	--------------------------------------------------------------------------------------------------------------------------
+	
 
-	------------------------------------------------------------
+	IMPLEMENTATIONS						
+	--------------------------------------------------------------------------------------------------------------------------
 
-	1) conduct.c is not concurrent and not lock-free
+	1 ) conduct.c is not concurrent and not lock-free
 
-			MODE_MEMCPY at TRUE use memcpy standard C library function else it don't
+		- The define MODE_MEMCPY at TRUE use memcpy standard C library function else it don't
 
-	------------------------------------------------------------
+	
 
 	2) concurrentconduct.c is concurrent and not lock-free  (Writer and Reader can use at the same time the Circular-Buffer)
 
-			it use ATOMIC OPERATIONS
-			there is 2 implementation possible :
+		- It use ATOMIC OPERATIONS
+		- There is 2 implementation possible :
 
 			MPMC ->  multiple producer multiple consumer solutions
 			SPSC ->  single producer single consumer solutions
+
+
+	--------------------------------------------------------------------------------------------------------------------------
+
+
+
+	TEST FILES
+	--------------------------------------------------------------------------------------------------------------------------
+	- julia
+	- test_3thread_depedency
+	- test_vectored_IO
+	- test_simple
+	
 
 
 

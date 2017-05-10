@@ -10,20 +10,20 @@ SRC = $(SRC_ASK)
 OBJ = $(SRC_ASK:.c=.o)	
 
 
-EXEC =  julia test little_test test_vectored_IO
+EXEC =  julia test_3thread_depedency test_simple test_vectored_IO
 
 all:$(EXEC)
 
 julia: $(OBJ)  exemple/julia.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: $(OBJ)  exemple/test.o
+test_3thread_depedency: $(OBJ)  exemple/test_3thread_depedency.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_vectored_IO: $(OBJ)  exemple/test_vectored_IO.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-little_test	: $(OBJ)  exemple/little_test.o
+test_simple	: $(OBJ)  exemple/test_simple.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 .c.o:

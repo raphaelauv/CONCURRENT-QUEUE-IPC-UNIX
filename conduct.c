@@ -24,6 +24,8 @@
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
 
+
+//all the informations necessary during a conduct operation
 struct dataCirularBuffer{
 	char passByMiddle;						// Boolean , TRUE if the read or write operation is going to pass from the end to the start of the buffer
 	size_t count;							// Size the User want to read or write on the CircularBuffer
@@ -48,22 +50,28 @@ struct conduct{
 	void * mmap;							// Pointer on the start of MAPED MEMORY
 };
 
+
+//all the content store inside the maped memory
 struct content {
 	pthread_mutex_t mutex;					// MUTEX of the CircularBuffer
-	pthread_cond_t conditionRead;			//
-	pthread_cond_t conditionWrite;
+	pthread_cond_t conditionRead;			// For sending signals to readers waiting
+	pthread_cond_t conditionWrite;			// For sending signals to writers waiting
 
-	size_t size_mmap;
-	size_t sizeMax;
-	size_t sizeAtom;
-	size_t start;
-	size_t end;
+	size_t size_mmap;						// Size maped ( necessary for  conduct_open function )
+	size_t sizeMax;							// Size of the CircularBuffer
+	size_t sizeAtom;						// Guaranteed atomic limit
+	size_t start;							// Index of the position from where readers read
+	size_t end;								// Index of the position from where writers write
 
-	char isEOF;
-	char isEmpty;
-	char *buffCircular;
+	char isEOF;								// Boolean , TRUE -> EOF have been insert in the CircularBuffer
+	char isEmpty;							// Boolean , TRUE -> the CircualarBuffer is Empty and so start == end
+	char *buffCircular;						// Pointer on the CircularBuffer
 };
 
+
+/*
+ *  Print the content of the CircularBuffer and show below the position of start and end indices
+ */
 int conduct_show(struct conduct *c){
 	struct content * ct = (struct content *) c->mmap;
 
