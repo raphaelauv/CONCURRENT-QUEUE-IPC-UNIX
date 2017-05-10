@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/uio.h>
 #include <unistd.h>
+#include <string.h>
 
 
 struct conduct;

@@ -22,6 +22,8 @@
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
 
+#define MODE_MEMCPY 1
+
 struct dataCirularBuffer{
 	char passByMiddle;
 	size_t count;
@@ -618,8 +620,12 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 		}else{
 			i=ct->end;
 		}
-		for ( ; i < limit; i++) {
 
+		#if MODE_MEMCPY
+		while(i<limit){
+		#else//NO MEMCPY VERSION
+		for ( ; i < limit; i++) {
+		#endif
 			if (data->sizeReallyManipulate == allCurrentCounts) {
 				currentIter = 0;
 				currentIndexIOV++;
@@ -628,16 +634,40 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 				allCurrentCounts += data->currentCount;
 			}
 
+			#if MODE_MEMCPY
+			int sizeToManipulate = data->currentCount;
+			if (sizeToManipulate > limit) {
+				sizeToManipulate = limit;
+			}
+			#endif
+
 			if(modeRead){
+				#if MODE_MEMCPY
+				memcpy( &(data->currentBuf[currentIter]),  &(ct->buffCircular[i]),sizeToManipulate);
+				currentIter+=sizeToManipulate;
+				ct->start+=sizeToManipulate;
+				#else //NO MEMCPY VERSION
 				data->currentBuf[currentIter]=ct->buffCircular[i];
 				ct->start++;
+				#endif
 			}else{
+				#if MODE_MEMCPY
+				memcpy( &(ct->buffCircular[i]), &(data->currentBuf[currentIter]),sizeToManipulate);
+				currentIter+=sizeToManipulate;
+				ct->end+=sizeToManipulate;
+				#else //NO MEMCPY VERSION
 				ct->buffCircular[i]=data->currentBuf[currentIter];
 				ct->end++;
+				#endif
 			}
 
+			#if MODE_MEMCPY
+			i+=sizeToManipulate;
+			data->sizeReallyManipulate+=sizeToManipulate;
+			#else //NO MEMCPY VERSION
 			currentIter++;
 			data->sizeReallyManipulate++;
+			#endif
 
 		}
 
@@ -646,6 +676,8 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 
 
 extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
+
+	int retry=0;
 
 	struct content * ct = (struct content *) c->mmap;
 
@@ -668,6 +700,16 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	}else{
 		if (pthread_mutex_lock(&ct->mutex)) {
 			return -1;
+		}
+	}
+
+
+retry_it:
+
+	if(retry){
+		if(pthread_mutex_trylock(&ct->mutex)){
+			errno=0;
+			return data.sizeReallyManipulate;
 		}
 	}
 
@@ -694,6 +736,15 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 
 		if (ct->isEmpty) {
+
+			if (retry) {
+				if (pthread_mutex_unlock(&ct->mutex)) {
+					return -1;
+				}
+				errno = 0;
+				return data.sizeReallyManipulate;
+			}
+
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				if(pthread_mutex_unlock(&ct->mutex)){
@@ -731,12 +782,22 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	if(pthread_mutex_unlock(&ct->mutex)){
 		return -1;
 	}
+
+
+	if (data.sizeReallyManipulate < data.count) {
+		retry = 1;
+		printf("WE RETRY !\n");
+		goto retry_it;
+	}
+
 	return data.sizeReallyManipulate;
 
 
 }
 
 extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
+
+	int retry=0;
 
 	struct content * ct = (struct content *) c->mmap;
 
@@ -771,6 +832,17 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		}
 	}
 
+retry_it:
+
+	if(retry){
+		conduct_show(c);
+		if(pthread_mutex_trylock(&ct->mutex)){
+			errno=0;
+			return data.sizeReallyManipulate;
+		}
+		printf("RETRY SUCCES\n");
+
+	}
 	
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
@@ -790,6 +862,14 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 		if((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
 			//buffer is FULL for the moment or there is not sufisant place
+
+			if (retry) {
+				if (pthread_mutex_unlock(&ct->mutex)) {
+					return -1;
+				}
+				errno = 0;
+				return data.sizeReallyManipulate;
+			}
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				if(pthread_mutex_unlock(&ct->mutex)){
@@ -826,6 +906,10 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 		return -1;
 	}
 
+	if (data.sizeReallyManipulate < data.count) {
+		retry = 1;
+		goto retry_it;
+	}
 
 	return  data.sizeReallyManipulate;
 

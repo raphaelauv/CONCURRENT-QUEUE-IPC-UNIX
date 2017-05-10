@@ -5,7 +5,7 @@
 int main(int argc, char **argv)
 {
 
-	struct conduct *c = conduct_create("TOTO", 5,10);
+	struct conduct *c = conduct_create("TOTO", 5,20);
 	conduct_show(c);
 
 	struct iovec iov [10];

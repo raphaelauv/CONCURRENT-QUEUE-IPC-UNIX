@@ -882,6 +882,11 @@ retry_it:
 		}
 
 		if (ct->isEmpty) {
+			if(retry){
+				unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
+				errno=0;
+				return data.sizeReallyManipulate;
+			}
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
 				errno=EWOULDBLOCK;
@@ -967,7 +972,7 @@ retry_it:
 
 		if(data.sizeReallyManipulate<data.count){
 			retry=1;
-			printf("WE RETRY !\n");
+			//printf("WE RETRY !\n");
 			goto retry_it;
 		}
 
@@ -1047,7 +1052,13 @@ retry_it:
 		if((data.end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
 			//buffer is FULL for the moment or there is not sufisant place
 
-			if ((flag & FLAG_O_NONBLOCK) != 0) {
+			if(retry){
+				errno=0;
+				unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
+				return data.sizeReallyManipulate;
+			}
+
+			if ((flag & FLAG_O_NONBLOCK) != 0 ) {
 				errno=EWOULDBLOCK;
 				unlockMutexAll(ct,flag);
 				return -1;
