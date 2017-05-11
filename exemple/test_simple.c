@@ -28,15 +28,12 @@ int main(int argc, char **argv)
 
 
 	char buff[12]={0};
-	for(int i=0;i<12;i++){
-		buff[i]=0;
-	}
 	size=conduct_read(a,buff,12);
 	printf("SIZE READ : %d | READ : %s\n",size,buff);
 	conduct_show(c);
 
 
-	size=conduct_write(a,"COXOVO",6);
+	size=conduct_write(a,"COXOVOCOXOVOT",13);
 	printf("SIZE WRITE :%d\n",size);
 	conduct_show(c);
 

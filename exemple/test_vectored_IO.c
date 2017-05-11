@@ -28,7 +28,7 @@ int main(int argc, char **argv)
 		iov2[i].iov_base=&tt[i];
 		iov2[i].iov_len=1;
 	}
-	tt[10]='\O';
+	tt[10]=EOF;
 
 	int sizeRead=	conduct_readv(c,iov2,10);
 

@@ -1,34 +1,30 @@
 /*
- *
  * Read , read from start to end
- *
  * Write , write from end to start
- *
  */
 
 #include "conduct.h"
 
-#define MODE_MEMCPY 1
+#define MODE_MEMCPY 0						// TRUE -> use memcpy standard C library function else it don't
 
-#define FILE_mode 0666
-
+#define FILE_mode 0666						// FILE mode opening
 #define FLAG_CLEAN_DESTROY 1
 #define FLAG_CLEAN_CLOSE 2
-
 #define INTERNAL_FLAG_WRITE 1
 #define INTERNAL_FLAG_READ 2
 #define FLAG_WRITE_EOF 4
 #define FLAG_WRITE_NORMAL 8
 #define FLAG_O_NONBLOCK 16
 
-#define MAXIMUM_SIZE_NAME_CONDUCT 100
-#define LIMIT_SHOW "————————————————————————"
+#define MAXIMUM_SIZE_NAME_CONDUCT 100		// Size Max for the file's name
+#define LIMIT_SHOW "——————————————————————"
 
 
 //all the informations necessary during a conduct operation
 struct dataCirularBuffer{
 	char passByMiddle;						// Boolean , TRUE if the read or write operation is going to pass from the end to the start of the buffer
 	size_t count;							// Size the User want to read or write on the CircularBuffer
+	size_t countResting;					// Size
 	size_t sizeAvailable;					// Size available to read or write on the CircularBuffer
 	size_t firstMaxFor;						// Value of the limit to read or write on the CircularBuffer
 	size_t secondMaxFor;					// only when passByMiddle is TRUE
@@ -158,7 +154,6 @@ extern inline void clean_Content(struct content * cont) {
 extern inline int init_Content(struct content * cont) {
 	int result=0;
 
-
 	pthread_mutexattr_t mutexAttr;
 	pthread_condattr_t condAttrRead;
 	pthread_condattr_t condAttrWrite;
@@ -175,11 +170,9 @@ extern inline int init_Content(struct content * cont) {
 	result+=pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
 	result+=pthread_mutex_init(&cont->mutex, &mutexAttr);
 
-	
 	pthread_mutexattr_destroy(&mutexAttr);
 	pthread_condattr_destroy(&condAttrRead);
 	pthread_condattr_destroy(&condAttrWrite);
-
 
 	return result;
 
@@ -325,9 +318,9 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		}
 
 	}
-	if (fd != -1) {
-		if (close(fd)) {
-		}
+
+	if (close(fd)) {
+		//TODO
 	}
 
 	cont = (struct content *) cond->mmap;
@@ -413,9 +406,9 @@ struct conduct *conduct_open(const char *name) {
 	if (cond->mmap == MAP_FAILED) {
 		goto cleanup;
 	}
-	if (fd != -1) {
-		if (close(fd)) {
-		}
+
+	if (close(fd)) {
+		//TODO
 	}
 
 	cont = (struct content *) cond->mmap;
@@ -476,10 +469,10 @@ extern inline void eval_limit_loops(struct content * ct,struct dataCirularBuffer
 }
 
 extern inline void eval_size_to_manipulate(struct content * ct,struct dataCirularBuffer * data) {
-	if (data->count >ct->sizeAtom) {
+	if (data->count - data->sizeReallyManipulate >ct->sizeAtom) { // sizeTodo - sizeAlreadyDO > atomic guarented ?
 		data->sizeToManipulate = ct->sizeAtom;
 	}else{
-		data->sizeToManipulate=data->count;
+		data->sizeToManipulate=data->count - data->sizeReallyManipulate;
 	}
 }
 
@@ -566,7 +559,6 @@ extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct 
 			return -1;
 		}
 
-		//for iter at end
 		data->current_iov_base=iov[0].iov_base;
 		data->current_iov_len=iov[0].iov_len;
 		data->allcurrent_iov_len=data->current_iov_len;
@@ -638,16 +630,20 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 			}
 
 			#if MODE_MEMCPY
-			int sizeLimit = data->current_iov_len - data->currentIterIOV;
-			if (sizeLimit > limit) {
-				sizeLimit = limit;
+			int sizeLimit = data->current_iov_len - data->currentIterIOV; // The limit is the number of boxes available inside the current IOV array
+
+			if (sizeLimit > data->sizeToManipulate) { // To not exceed the number of boxes available to use
+				sizeLimit = data->sizeToManipulate;
+			}
+			if(i+sizeLimit>limit){ // To not exceed the size of the CircularBuffer
+				sizeLimit=limit -i;
 			}
 			#endif
 
 			if(modeRead){
 				#if MODE_MEMCPY
 				memcpy( &(data->current_iov_base[data->currentIterIOV]),  &(ct->buffCircular[i]),sizeLimit);
-				data->currentIterIOV+=sizeLimit;
+
 				ct->start+=sizeLimit;
 				#else //NO MEMCPY VERSION
 				data->current_iov_base[data->currentIterIOV]=ct->buffCircular[i];
@@ -656,7 +652,6 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 			}else{
 				#if MODE_MEMCPY
 				memcpy( &(ct->buffCircular[i]), &(data->current_iov_base[data->currentIterIOV]),sizeLimit);
-				data->currentIterIOV+=sizeLimit;
 				ct->end+=sizeLimit;
 				#else //NO MEMCPY VERSION
 				ct->buffCircular[i]=data->current_iov_base[data->currentIterIOV];
@@ -665,6 +660,7 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 			}
 
 			#if MODE_MEMCPY
+			data->currentIterIOV+=sizeLimit;
 			i+=sizeLimit;
 			data->sizeReallyManipulate+=sizeLimit;
 			#else //NO MEMCPY VERSION
@@ -674,16 +670,6 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 
 		}
 		//printf("END LOOP | sizeManipulate %d\n",data->sizeReallyManipulate);
-		/*
-		//WE NEED TO VERIF AGAIN AFTER THE FOR , IF THE GOTO RETRY SUCCES
-		if (data->sizeReallyManipulate > data->allcurrent_iov_len) {
-			data->currentIterIOV = 0;
-			data->currentIndexIOV++;
-			data->current_iov_base = iov[data->currentIndexIOV].iov_base;
-			data->current_iov_len = iov[data->currentIndexIOV].iov_len;
-			data->allcurrent_iov_len += data->current_iov_len;
-		}
-		*/
 
 	}
 }
@@ -800,20 +786,15 @@ retry_it:
 		return -1;
 	}
 
-
 	if (data.sizeReallyManipulate < data.count) {
 		//printf("SIZE ALREADY READ : %d\n",data.sizeReallyManipulate);
 		//printf("TAILLE %d , contenu : %s\n",iov->iov_len,iov->iov_base);
 		retry = 1;
-
-		//RESET VALUES
-		data.count-=data.sizeReallyManipulate;
-		data.passByMiddle=0;
+		data.passByMiddle=0;// Reset value
 		goto retry_it;
 	}
 
 	return data.sizeReallyManipulate;
-
 
 }
 
@@ -930,10 +911,7 @@ retry_it:
 
 	if (data.sizeReallyManipulate < data.count) {
 		retry = 1;
-
-		//RESET VALUES
-		data.count-=data.sizeReallyManipulate;
-		data.passByMiddle=0;
+		data.passByMiddle=0; // Reset value
 		goto retry_it;
 	}
 
