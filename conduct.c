@@ -485,7 +485,7 @@ extern inline void eval_size_to_manipulate(struct content * ct,struct dataCirula
 
 extern inline void eval_position_and_size_of_data(struct content * ct,struct dataCirularBuffer * data,int flag) {
 
-	if(ct->isEmpty){
+	if(ct->isEmpty){ //and so ct.start == ct.end
 
 		if(flag==INTERNAL_FLAG_WRITE){
 			data->sizeAvailable = ct->sizeMax;
@@ -535,7 +535,7 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 
 		return;
 
-	}else{
+	}else{ //ct->start > ct-> end
 
 		if (flag == INTERNAL_FLAG_READ) {
 			data->sizeAvailable = (ct->sizeMax - ct->start) + ct->end;
@@ -569,8 +569,9 @@ extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct 
 		//for iter at end
 		data->current_iov_base=iov[0].iov_base;
 		data->current_iov_len=iov[0].iov_len;
-
 		data->allcurrent_iov_len=data->current_iov_len;
+		//printf("ALL CURRENT IOVLEN %d\n",data->allcurrent_iov_len);
+
 		data->currentIndexIOV=0;
 		data->currentIterIOV=0;
 		size_t sizeTotal=0;
@@ -595,8 +596,8 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 		modeRead=1;
 	}
 
-
 	limit=data->firstMaxFor;
+	//printf("LIMIT 1 -> %d\n",limit);
 
 	for(k=0;k<1+data->passByMiddle;k++){
 
@@ -612,6 +613,7 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 			}
 
 			limit=data->secondMaxFor;
+			//printf("LIMIT 2 -> %d\n",limit);
 		}
 		if(modeRead){
 			i=ct->start;
@@ -625,15 +627,18 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 		for ( ; i < limit; i++) {
 		#endif
 			if (data->sizeReallyManipulate == data->allcurrent_iov_len) {
+				//printf("CHANGEMENT IOV | sizeManipulate %d\n",data->sizeReallyManipulate);
 				data->currentIterIOV = 0;
 				data->currentIndexIOV++;
 				data->current_iov_base = iov[data->currentIndexIOV].iov_base;
 				data->current_iov_len = iov[data->currentIndexIOV].iov_len;
 				data->allcurrent_iov_len += data->current_iov_len;
+			}else{
+				//printf("PAS CHANGEMENT IOV | sizeManipulate %d\n",data->sizeReallyManipulate);
 			}
 
 			#if MODE_MEMCPY
-			int sizeLimit = data->current_iov_len;
+			int sizeLimit = data->current_iov_len - data->currentIterIOV;
 			if (sizeLimit > limit) {
 				sizeLimit = limit;
 			}
@@ -668,15 +673,17 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 			#endif
 
 		}
-
+		//printf("END LOOP | sizeManipulate %d\n",data->sizeReallyManipulate);
+		/*
 		//WE NEED TO VERIF AGAIN AFTER THE FOR , IF THE GOTO RETRY SUCCES
-		if (data->sizeReallyManipulate == data->allcurrent_iov_len) {
+		if (data->sizeReallyManipulate > data->allcurrent_iov_len) {
 			data->currentIterIOV = 0;
 			data->currentIndexIOV++;
 			data->current_iov_base = iov[data->currentIndexIOV].iov_base;
 			data->current_iov_len = iov[data->currentIndexIOV].iov_len;
 			data->allcurrent_iov_len += data->current_iov_len;
 		}
+		*/
 
 	}
 }
@@ -718,7 +725,6 @@ retry_it:
 			errno=0;
 			return data.sizeReallyManipulate;
 		}
-		//printf("RETRY SUCCES\n");
 	}
 
 	int needReEval=0;
@@ -737,10 +743,12 @@ retry_it:
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
 		}
-		eval_position_and_size_of_data(ct,&data);
+		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
+
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
 		}
+
 
 
 		if (ct->isEmpty) {
@@ -797,6 +805,10 @@ retry_it:
 		//printf("SIZE ALREADY READ : %d\n",data.sizeReallyManipulate);
 		//printf("TAILLE %d , contenu : %s\n",iov->iov_len,iov->iov_base);
 		retry = 1;
+
+		//RESET VALUES
+		data.count-=data.sizeReallyManipulate;
+		data.passByMiddle=0;
 		goto retry_it;
 	}
 
@@ -850,6 +862,7 @@ retry_it:
 			errno=0;
 			return data.sizeReallyManipulate;
 		}
+		//printf("RETRY pour %d\n",data.count);
 	}
 	
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
@@ -866,6 +879,7 @@ retry_it:
 		}
 
 		eval_size_to_manipulate(ct,&data);
+		//printf("SIZE TO MANIPULATE %d\n",data.sizeToManipulate);
 		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_WRITE);
 
 		if((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
@@ -916,6 +930,10 @@ retry_it:
 
 	if (data.sizeReallyManipulate < data.count) {
 		retry = 1;
+
+		//RESET VALUES
+		data.count-=data.sizeReallyManipulate;
+		data.passByMiddle=0;
 		goto retry_it;
 	}
 
@@ -926,7 +944,7 @@ retry_it:
 ssize_t conduct_read(struct conduct *c, void *buf, size_t count) {
 
 	struct iovec iov;
-	iov.iov_base=(void *)buf;
+	iov.iov_base= buf;
 	iov.iov_len=count;
 
 	return conduct_read_v_flag(c,&iov,1,0);

@@ -10,7 +10,7 @@ Author:  raphaelauv
 	- Non Blocking 	read,write,write_eof
 	- Vectored 		read,write,write_eof
 
-	- Compliant operations (try to read and write as far as ask by user while respecting atomic limit)
+	- Compliant operations (try to read or write as far as ask by user while respecting atomic limit and blocking mode)
 	- Pipe can be anonymous or maped in a file
 	- Code Correctness (All systemCall and Mutex Operations return values are tested)
 	--------------------------------------------------------------------------------------------------------------------------
@@ -22,7 +22,6 @@ Author:  raphaelauv
 	1 ) conduct.c is not concurrent and not lock-free
 
 		- The define MODE_MEMCPY at TRUE use memcpy standard C library function else it don't
-
 	
 
 	2) concurrentconduct.c is concurrent and not lock-free  (Writer and Reader can use at the same time the Circular-Buffer)

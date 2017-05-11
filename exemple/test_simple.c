@@ -17,12 +17,12 @@ int main(int argc, char **argv)
 
 	struct conduct *a =c;
 
-	int size=conduct_write(a,"ABCDEFGHIJK",5);
+	int size=conduct_write(a,"ABCDEFGHIJK",6);
 	printf("SIZE WRITE :%d\n",size);
 	conduct_show(c);
 	
 
-	size=conduct_write(a,"ABCDEFGIJK",4);
+	size=conduct_write(a,"MNOPQRS",4);
 	printf("SIZE WRITE :%d\n",size);
 	conduct_show(c);
 
@@ -36,7 +36,7 @@ int main(int argc, char **argv)
 	conduct_show(c);
 
 
-	size=conduct_write(a,"COCOCO",6);
+	size=conduct_write(a,"COXOVO",6);
 	printf("SIZE WRITE :%d\n",size);
 	conduct_show(c);
 
@@ -47,7 +47,7 @@ int main(int argc, char **argv)
 	conduct_show(c);
 
 
-	size=conduct_write(a,"COCOCO",6);
+	size=conduct_write(a,"PAMATA",6);
 	printf("SIZE WRITE :%d\n",size);
 	conduct_show(c);
 
@@ -56,10 +56,12 @@ int main(int argc, char **argv)
 	printf("SIZE READ : %d | READ : %s\n",size,buff3);
 	conduct_show(c);
 
+	/*
 	char buff4[11]={0};
+	size=conduct_read(c,buff4,10);
 	printf("SIZE READ : %d | READ : %s\n",size,buff4);
 	conduct_show(c);
-
+	*/
 
 
 }
