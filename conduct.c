@@ -38,9 +38,9 @@ struct dataCirularBuffer{
 	//indices for the loop read or write
 	char * current_iov_base;				// Pointer to the current IOV array
 	size_t current_iov_len;					// Size of the current IOV array
-	size_t allcurrent_iov_len;				// Addition of the sizes of all the arrays of IOV already seen and the current own
-	int currentIndexIOV;					// Index of current Array of IOV
-	int currentIterIOV;						// Index of current position to read or write in the array of IOV
+	size_t allcurrent_iov_len;				// Addition of all array's sizes of IOV already seen and the current own
+	int currentIndexIOV;					// Index of the current Array in the IOV structure
+	int currentIterIOV;						// Index of current position in the current array of IOV structure
 
 };
 
@@ -475,22 +475,11 @@ extern inline void eval_limit_loops(struct content * ct,struct dataCirularBuffer
 
 }
 
-extern inline void eval_size_to_manipulate(struct content * ct,struct dataCirularBuffer * data,int flag) {
-
-
+extern inline void eval_size_to_manipulate(struct content * ct,struct dataCirularBuffer * data) {
 	if (data->count >ct->sizeAtom) {
 		data->sizeToManipulate = ct->sizeAtom;
-
-		if(flag==INTERNAL_FLAG_WRITE){
-			return;
-		}
 	}else{
-		if(flag==INTERNAL_FLAG_WRITE){
-			data->sizeToManipulate = data->count;
-			return;
-		}
 		data->sizeToManipulate=data->count;
-
 	}
 }
 
@@ -563,7 +552,7 @@ extern inline void eval_position_and_size_of_data(struct content * ct,struct dat
 	}
 }
 
-extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct conduct *c,const struct iovec *iov, int iovcnt,unsigned char flag){
+extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct conduct *c,const struct iovec *iov, int iovcnt){
 
 	if (c == NULL || iovcnt == 0 || iov == NULL) {
 			errno = EINVAL;
@@ -706,7 +695,7 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	}
 
 	struct dataCirularBuffer data = { 0 };
-	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
+	if(init_dataCirularBuffer(&data,c,iov,iovcnt)){
 		//TODO errno
 		return -1;
 	}
@@ -743,12 +732,12 @@ retry_it:
 			return -1;
 		}
 
-		eval_size_to_manipulate(ct,&data,INTERNAL_FLAG_READ);
+		eval_size_to_manipulate(ct,&data);
 		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
 		}
-		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
+		eval_position_and_size_of_data(ct,&data);
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
 		}
@@ -837,7 +826,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 
 	struct dataCirularBuffer data = { 0 };
 
-	if(init_dataCirularBuffer(&data,c,iov,iovcnt,flag)){
+	if(init_dataCirularBuffer(&data,c,iov,iovcnt)){
 		return -1;
 	}
 
@@ -876,7 +865,7 @@ retry_it:
 			return -1;
 		}
 
-		eval_size_to_manipulate(ct,&data,INTERNAL_FLAG_WRITE);
+		eval_size_to_manipulate(ct,&data);
 		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_WRITE);
 
 		if((ct->end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable){
