@@ -96,7 +96,7 @@ static void * order_thread(void *arg){
     }
 }
 
-static void * julia_thread(void *arg)
+static void * worker_thread(void *arg)
 {
     struct twocons cons = *(struct twocons*)arg;
 
@@ -178,7 +178,7 @@ int main(int argc, char **argv)
     	}else if(i%3==1){
     		rc = pthread_create(&( array[i]), NULL, result_thread , &cons);
     	}else{
-    		rc = pthread_create(&( array[i]), NULL, julia_thread, &cons);
+    		rc = pthread_create(&( array[i]), NULL, worker_thread, &cons);
     	}
 
         if(rc != 0) {

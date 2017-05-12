@@ -40,8 +40,12 @@ Author:  raphaelauv
 	TEST FILES
 	--------------------------------------------------------------------------------------------------------------------------
 	- julia
-	- test_3thread_depedency
+
+	- test_3thread_depedency	launch 3 type of threads with 2 shared conduct
+			threads ORDER write in Conduct 1 || threads WORKER read in Conduct 1 and after write in conduct 2 || threads RESULT read Conduct 2
+			
 	- test_vectored_IO
+
 	- test_simple
 	
 

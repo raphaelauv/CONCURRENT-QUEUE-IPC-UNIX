@@ -24,7 +24,6 @@
 struct dataCirularBuffer{
 	char passByMiddle;						// Boolean , TRUE if the read or write operation is going to pass from the end to the start of the buffer
 	size_t count;							// Size the User want to read or write on the CircularBuffer
-	size_t countResting;					// Size
 	size_t sizeAvailable;					// Size available to read or write on the CircularBuffer
 	size_t firstMaxFor;						// Value of the limit to read or write on the CircularBuffer
 	size_t secondMaxFor;					// only when passByMiddle is TRUE
@@ -581,7 +580,6 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 	int k=0;
 	int limit;
 	size_t i;
-
 	char modeRead=0;
 
 	if(flag==INTERNAL_FLAG_READ){
@@ -728,14 +726,8 @@ retry_it:
 		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
+			eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
 		}
-		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
-
-		if (data.sizeToManipulate > data.sizeAvailable) {
-			data.sizeToManipulate = data.sizeAvailable;
-		}
-
-
 
 		if (ct->isEmpty) {
 
@@ -744,7 +736,6 @@ retry_it:
 					return -1;
 				}
 				errno = 0;
-				printf("READ EMPTY\n");
 				return data.sizeReallyManipulate;
 			}
 

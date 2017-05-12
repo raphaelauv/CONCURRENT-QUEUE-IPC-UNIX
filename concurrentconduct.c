@@ -1,7 +1,6 @@
 /*
  *
  * Read , read from start to end
- *
  * Write , write from end to start
  *
  */
@@ -32,21 +31,24 @@ struct dataCirularBuffer{
 	size_t sizeAtom;
 	size_t start;
 	size_t end;
-	//char isEOF;
 	char isEmpty;
 	volatile atomic_char *buffCircular;
 
-	char passByMiddle;
-	size_t count;
-	size_t sizeAvailable;
-	size_t firstMaxFor;
-	size_t secondMaxFor;
-	size_t sizeToManipulate;
-	ssize_t sizeReallyManipulate;
+	char passByMiddle;						// Boolean , TRUE if the read or write operation is going to pass from the end to the start of the buffer
+	size_t count;							// Size the User want to read or write on the CircularBuffer
+	size_t sizeAvailable;					// Size available to read or write on the CircularBuffer
+	size_t firstMaxFor;						// Value of the limit to read or write on the CircularBuffer
+	size_t secondMaxFor;					// only when passByMiddle is TRUE
+	size_t sizeToManipulate;				// Size we going to read or write on the CircularBuffer with the actual mutex take
+	ssize_t sizeReallyManipulate;			// Size total read or write on the CircularBuffer with all the hypothetical mutex took
 
-	//for iter at end
-	char * currentBuf;
-	size_t currentCount;
+	//indices for the loop read or write
+	char * current_iov_base;				// Pointer to the current IOV array
+	size_t current_iov_len;					// Size of the current IOV array
+	size_t allcurrent_iov_len;				// Addition of all array's sizes of IOV already seen and the current own
+	int currentIndexIOV;					// Index of the current Array in the IOV structure
+	int currentIterIOV;						// Index of current position in the current array of IOV structure
+
 
 
 	//for MPMC solution
@@ -557,12 +559,12 @@ inline void eval_limit_loops(struct dataCirularBuffer * data,int flag){
 }
 
 extern inline void eval_size_to_manipulate(struct dataCirularBuffer * data) {
-
-	if (data->count > data->sizeAtom) {
+	if (data->count - data->sizeReallyManipulate >data->sizeAtom) { // sizeTodo - sizeAlreadyDO > atomic guarented ?
 		data->sizeToManipulate = data->sizeAtom;
-	} else {
-		data->sizeToManipulate = data->count;
+	}else{
+		data->sizeToManipulate=data->count - data->sizeReallyManipulate;
 	}
+
 }
 
 
@@ -640,10 +642,11 @@ extern inline int init_dataCirularBuffer(struct dataCirularBuffer * data,struct 
 			return -1;
 		}
 
-		//for iter at end
-		data->currentBuf=iov[0].iov_base;
-		data->currentCount=iov[0].iov_len;
-
+		data->current_iov_base=iov[0].iov_base;
+		data->current_iov_len=iov[0].iov_len;
+		data->allcurrent_iov_len=data->current_iov_len;
+		data->currentIndexIOV=0;
+		data->currentIterIOV=0;
 
 		size_t sizeTotal=0;
 
@@ -660,17 +663,11 @@ extern inline void apply_loops(struct dataCirularBuffer * data,const struct iove
 	int k=0;
 	int limit;
 	size_t i;
-
-	int currentIndexIOV=0;
-	int currentIter=0;
-	int allCurrentCounts=data->currentCount;
-
 	char modeRead=0;
 
 	if(flag==INTERNAL_FLAG_READ){
 		modeRead=1;
 	}
-
 
 	limit=data->firstMaxFor;
 
@@ -696,26 +693,24 @@ extern inline void apply_loops(struct dataCirularBuffer * data,const struct iove
 		}
 		for ( ; i < limit; i++) {
 
-			if (data->sizeReallyManipulate == allCurrentCounts) {
-				currentIter = 0;
-				currentIndexIOV++;
-				data->currentBuf = iov[currentIndexIOV].iov_base;
-				data->currentCount = iov[currentIndexIOV].iov_len;
-				allCurrentCounts += data->currentCount;
+			if (data->sizeReallyManipulate == data->allcurrent_iov_len) {
+				data->currentIterIOV = 0;
+				data->currentIndexIOV++;
+				data->current_iov_base = iov[data->currentIndexIOV].iov_base;
+				data->current_iov_len = iov[data->currentIndexIOV].iov_len;
+				data->allcurrent_iov_len += data->current_iov_len;
 			}
 
 			if(modeRead){
-				data->currentBuf[currentIter]=atomic_load(&(data->buffCircular[i]));
-				//data->currentBuf[currentIter]=data->buffCircular[i];
+				data->current_iov_base[data->currentIterIOV]=atomic_load(&(data->buffCircular[i]));
 				data->start++;
 			}else{
-				atomic_store(&(data->buffCircular[i]),data->currentBuf[currentIter]);
 
-				//data->buffCircular[i]=data->currentBuf[currentIter];
+				atomic_store(&(data->buffCircular[i]),data->current_iov_base[data->currentIterIOV]);
 				data->end++;
 			}
 
-			currentIter++;
+			data->currentIterIOV++;
 			data->sizeReallyManipulate++;
 
 		}
@@ -865,8 +860,7 @@ retry_it:
 
 
 		if(ct->isEOF) { //atomic_load(&(ct->isEOF))
-			errno = EPIPE;
-			printf("READ EOF\n");
+			errno = EPIPE; // Before because unlockMutexAll can fail and eedit errno
 			unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
 			return -1;
 		}
@@ -875,11 +869,9 @@ retry_it:
 		READ_eval_position_and_size_of_data(&data);
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
+			READ_eval_position_and_size_of_data(&data);
 		}
-		READ_eval_position_and_size_of_data(&data);
-		if (data.sizeToManipulate > data.sizeAvailable) {
-			data.sizeToManipulate = data.sizeAvailable;
-		}
+
 
 		if (ct->isEmpty) {
 			if(retry){
@@ -962,17 +954,14 @@ retry_it:
 	}
 
 	#if mode_Single_Reader_And_Writer
-	//if(mode_Single_Reader_And_Writer){
-	
 		if(unlockMutexFlag(ct,INTERNAL_FLAG_READ)){
 			return -1;
 		}
-	//}
 	#endif
 
 		if(data.sizeReallyManipulate<data.count){
 			retry=1;
-			//printf("WE RETRY !\n");
+			data.passByMiddle=0;// Reset value
 			goto retry_it;
 		}
 
@@ -1131,15 +1120,14 @@ retry_it:
 	}
 
 	#if mode_Single_Reader_And_Writer
-	//if(mode_Single_Reader_And_Writer){
 		if(unlockMutexFlag(ct,INTERNAL_FLAG_WRITE)){
 			return -1;
 		}
-	//}
 	#endif
 
 	if (data.sizeReallyManipulate < data.count) {
 		retry = 1;
+		data.passByMiddle=0;// Reset value
 		goto retry_it;
 	}
 
