@@ -25,8 +25,8 @@ struct dataCirularBuffer{
 	char passByMiddle;						// Boolean , TRUE if the read or write operation is going to pass from the end to the start of the buffer
 	size_t count;							// Size the User want to read or write on the CircularBuffer
 	size_t sizeAvailable;					// Size available to read or write on the CircularBuffer
-	size_t firstMaxFor;						// Value of the limit to read or write on the CircularBuffer
-	size_t secondMaxFor;					// only when passByMiddle is TRUE
+	size_t firstLimitLoop;					// Value of the limit to read or write on the CircularBuffer
+	size_t secondLimitLoop;					// only when passByMiddle is TRUE
 	size_t sizeToManipulate;				// Size we going to read or write on the CircularBuffer with the actual mutex take
 	ssize_t sizeReallyManipulate;			// Size total read or write on the CircularBuffer with all the hypothetical mutex took
 
@@ -439,7 +439,7 @@ struct conduct *conduct_open(const char *name) {
 extern inline void eval_limit_loops(struct content * ct,struct dataCirularBuffer * data,int flag){
 
 	if(data->passByMiddle){
-		data->firstMaxFor=ct->sizeMax;
+		data->firstLimitLoop=ct->sizeMax;
 
 		int restToPerform=data->sizeToManipulate;
 
@@ -451,17 +451,17 @@ extern inline void eval_limit_loops(struct content * ct,struct dataCirularBuffer
 		}
 
 		if( restToPerform > 0){
-			data->secondMaxFor=restToPerform;
+			data->secondLimitLoop=restToPerform;
 		}
 
 	}else{
 
 		if(flag==INTERNAL_FLAG_WRITE){
-			data->firstMaxFor=ct->end ;
+			data->firstLimitLoop=ct->end ;
 		}else{
-			data->firstMaxFor=ct->start;
+			data->firstLimitLoop=ct->start;
 		}
-		data->firstMaxFor += data->sizeToManipulate;
+		data->firstLimitLoop += data->sizeToManipulate;
 
 	}
 
@@ -586,7 +586,7 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 		modeRead=1;
 	}
 
-	limit=data->firstMaxFor;
+	limit=data->firstLimitLoop;
 	//printf("LIMIT 1 -> %d\n",limit);
 
 	for(k=0;k<1+data->passByMiddle;k++){
@@ -602,7 +602,7 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 				ct->end=0;
 			}
 
-			limit=data->secondMaxFor;
+			limit=data->secondLimitLoop;
 			//printf("LIMIT 2 -> %d\n",limit);
 		}
 		if(modeRead){

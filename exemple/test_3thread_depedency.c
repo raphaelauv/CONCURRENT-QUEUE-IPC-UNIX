@@ -8,13 +8,14 @@
 #include <pthread.h>
 #include "../conduct.h"
 
-#define QSIZE 10
+#define QSIZE 1000
 #define COUNT 10
 
-/* Voir la fonction toc ci-dessous. */
 
-int dx, dy;
-complex double julia_c;
+int valueTotest =100000;
+int nbThreadsMultiplier = 10;
+int nbASK = 0;
+
 
 /* La structure qui contient une requête du programme principal. */
 
@@ -46,11 +47,14 @@ short int calcul(struct julia_request * req){
 	return result;
 }
 
+ struct timespec t0;
 
 static void * result_thread(void *arg){
 	struct twocons cons = *(struct twocons*)arg;
 
-	printf("START RESULT\n");
+
+	struct timespec t1;
+	//printf("START RESULT\n");
 
     while(1) {
         struct julia_reply rep;
@@ -63,9 +67,20 @@ static void * result_thread(void *arg){
             return NULL;
         }
 
-        printf("RESULT : %d\n",rep.number);
+        if(rep.number > valueTotest -1){
+
+    		clock_gettime(CLOCK_MONOTONIC, &t1);
+
+    		printf("Repaint done in %.6lfs\n",
+           ((double)t1.tv_sec - t0.tv_sec) +
+           ((double)t1.tv_nsec - t0.tv_nsec) / 1.0E9);
+    		break;
+        }
+        //printf("RESULT : %d\n",rep.number);
 
     }
+    //printf("result : END\n");
+    return NULL;
 }
 
 static void * order_thread(void *arg){
@@ -73,7 +88,7 @@ static void * order_thread(void *arg){
 	int i=0;
 	//conduct_show(cons.one);
 
-	printf("START ORDER\n");
+	//printf("START ORDER\n");
 
     while(1) {
         struct julia_request req;
@@ -90,17 +105,25 @@ static void * order_thread(void *arg){
 			conduct_write_eof(cons.one);
 			return NULL;
 		}
-		printf("ORDER : %d\n",req.number);
+
+		if(i>valueTotest +nbASK ){
+
+			
+			break;
+		}
+		//printf("ORDER : %d\n",req.number);
 		//conduct_show(cons.one);
 
     }
+	//printf("order : END\n");
+    return NULL;
 }
 
 static void * worker_thread(void *arg)
 {
     struct twocons cons = *(struct twocons*)arg;
 
-    printf("START WORKER\n");
+    //printf("START WORKER\n");
 
     while(1) {
         struct julia_request req;
@@ -119,7 +142,7 @@ static void * worker_thread(void *arg)
         rep.y=req.y;
         rep.number=req.number;
         rep.count=req.count;
-        rep.result=calcul(&req);
+        rep.result=1;
 
         rc = conduct_write(cons.two, &rep, sizeof(rep));
         if(rc < 0) {
@@ -128,9 +151,15 @@ static void * worker_thread(void *arg)
             return NULL;
         }
 
+        if(rep.number>valueTotest ){
+			break;
+		}
 
-        printf("WORKER : %d\n",req.number);
+        //printf("WORKER : %d\n",req.number);
     }
+
+    //printf("WORKER : END\n");
+    return NULL;
 }
 
 int main(int argc, char **argv)
@@ -140,8 +169,13 @@ int main(int argc, char **argv)
     int numthreads = 0;
     int rc;
 
-    julia_c = 1.0 - (1.0 + sqrt(5.0)) / 2.0;
+    nbASK=nbThreadsMultiplier;
+    if(argc>1){
 
+    	nbASK=atoi(argv[1]);
+
+    	printf("ARG : %d\n",nbASK);
+    }
 
 
     cons.one = conduct_create(NULL, sizeof(struct julia_request),
@@ -165,29 +199,35 @@ int main(int argc, char **argv)
         perror("sysconf(_SC_NPROCESSORS_ONLN)");
         exit(1);
     }
-    printf("Running %d worker threads.\n", numthreads);
+    printf("Running %d threads.\n", nbASK *3 *numthreads);
 
-    numthreads*=10;
+    numthreads*=nbASK * 3;
+
+    nbASK = numthreads * nbASK ;
 
     pthread_t array[numthreads];
 
-    for(int i = 0; i < numthreads; i++) {
+	
+    for(int i = 0; i < numthreads; ) {
 
-    	if(i%3==0){
-    		rc = pthread_create(&( array[i]), NULL, order_thread, &cons);
-    	}else if(i%3==1){
-    		rc = pthread_create(&( array[i]), NULL, result_thread , &cons);
-    	}else{
-    		rc = pthread_create(&( array[i]), NULL, worker_thread, &cons);
-    	}
+
+		rc += pthread_create(&( array[i]), NULL, order_thread, &cons);
+
+		rc += pthread_create(&( array[i+1]), NULL, result_thread , &cons);
+
+		rc += pthread_create(&( array[i+2]), NULL, worker_thread, &cons);
 
         if(rc != 0) {
             errno = rc;
             perror("pthread_create");
             exit(1);
         }
+        i+=3;
 
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+
     for(int i = 0; i < numthreads; i++) {
 		pthread_join(array[i], NULL);
     }
