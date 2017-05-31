@@ -169,9 +169,9 @@ extern inline int init_Content(struct content * cont) {
 	result+=pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
 	result+=pthread_mutex_init(&cont->mutex, &mutexAttr);
 
-	pthread_mutexattr_destroy(&mutexAttr);
-	pthread_condattr_destroy(&condAttrRead);
-	pthread_condattr_destroy(&condAttrWrite);
+	result+=pthread_mutexattr_destroy(&mutexAttr);
+	result+=pthread_condattr_destroy(&condAttrRead);
+	result+=pthread_condattr_destroy(&condAttrWrite);
 
 	return result;
 
@@ -188,13 +188,6 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 
 		if (cond->mmap != MAP_FAILED) {
 
-			if(cond->fileName!=NULL){
-				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
-					printf("ERROR msync()\n");
-					error = 1;
-				}
-			}
-
 			if(flag==FLAG_CLEAN_DESTROY){
 				struct content * cont = (struct content *) cond->mmap;
 				clean_Content(cont);
@@ -204,15 +197,17 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 				printf("ERROR munmap()\n");
 				error = 1;
 			}
-
 			cond->mmap=NULL;
-
 		}
 
 		if(cond->fileName!=NULL){
 			if (flag == FLAG_CLEAN_DESTROY) {
-
 				if (unlink(cond->fileName)) {
+					error = 1;
+				}
+			}else{
+				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
+					printf("ERROR msync()\n");
 					error = 1;
 				}
 			}
@@ -321,6 +316,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	if (close(fd)) {
 		//TODO
 	}
+	fd=-1;
 
 	cont = (struct content *) cond->mmap;
 
@@ -353,7 +349,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		goto cleanup;
 	}
 
-	msync(cond->mmap,cond->size_mmap,MS_SYNC);
+	msync(cond->mmap,cond->size_mmap,MS_SYNC);//TODO test return value and MS_INVALIDATE
 
 	return cond;
 

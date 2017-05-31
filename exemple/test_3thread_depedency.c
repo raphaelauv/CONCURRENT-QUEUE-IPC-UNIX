@@ -6,10 +6,27 @@
 #include <complex.h>
 #include <unistd.h>
 #include <pthread.h>
+
+#include <asm-generic/socket.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/un.h>
+#include <unistd.h>
+
 #include "../conduct.h"
 
 #define QSIZE 1000
 #define COUNT 10
+
+#define MODE_COND 0
+#define MODE_PIPE 0
+#define MODE_SOCKET 1
 
 
 int valueTotest =100000;
@@ -38,6 +55,14 @@ struct twocons {
     struct conduct *one, *two;
 };
 
+struct twopipe {
+     int *one, *two;
+};
+
+struct twosock {
+	int *one, *two;
+};
+
 
 short int calcul(struct julia_request * req){
 	short int result=0;
@@ -50,8 +75,17 @@ short int calcul(struct julia_request * req){
  struct timespec t0;
 
 static void * result_thread(void *arg){
-	struct twocons cons = *(struct twocons*)arg;
+	struct twocons cons;
+	struct twopipe pipes;
+	struct twosock socks;
 
+	if (MODE_COND) {
+		cons = *(struct twocons*)arg;
+	} else if (MODE_PIPE) {
+		pipes = *(struct twopipe*)arg;
+	} else if (MODE_SOCKET) {
+		socks = *(struct twosock*)arg;
+	}
 
 	struct timespec t1;
 	//printf("START RESULT\n");
@@ -60,7 +94,15 @@ static void * result_thread(void *arg){
         struct julia_reply rep;
         int rc;
 
-        rc = conduct_read(cons.two, &rep, sizeof(rep));
+		if (MODE_COND) {
+			rc = conduct_read(cons.two, &rep, sizeof(rep));
+		} else if (MODE_PIPE) {
+			rc = read(pipes.two[0], &rep, sizeof(rep));
+		} else if (MODE_SOCKET) {
+			rc = read(socks.two[0], &rep, sizeof(rep));
+		}
+
+
         if(rc <= 0) {
         	printf("ERROR RESULT\n");
         	conduct_write_eof(cons.two);
@@ -84,11 +126,21 @@ static void * result_thread(void *arg){
 }
 
 static void * order_thread(void *arg){
-	struct twocons cons = *(struct twocons*)arg;
-	int i=0;
-	//conduct_show(cons.one);
 
-	//printf("START ORDER\n");
+	struct twocons cons;
+	struct twopipe pipes;
+	struct twosock socks;
+
+	if (MODE_COND) {
+		cons = *(struct twocons*)arg;
+	} else if (MODE_PIPE) {
+		pipes = *(struct twopipe*)arg;
+	} else if (MODE_SOCKET) {
+		socks = *(struct twosock*)arg;
+	}
+
+
+	int i=0;
 
     while(1) {
         struct julia_request req;
@@ -99,7 +151,15 @@ static void * order_thread(void *arg){
         req.y=i%7;
 
         int rc;
-		rc = conduct_write(cons.one, &req, sizeof(req));
+
+		if (MODE_COND) {
+			rc = conduct_write(cons.one, &req, sizeof(req));
+		} else if (MODE_PIPE) {
+			rc =write(pipes.one[1], &req, sizeof(req));
+		} else if (MODE_SOCKET) {
+			rc = write(socks.one[1], &req, sizeof(req));
+		}
+
 		if (rc < 0) {
 			printf("ERROR ORDER\n");
 			conduct_write_eof(cons.one);
@@ -121,16 +181,33 @@ static void * order_thread(void *arg){
 
 static void * worker_thread(void *arg)
 {
-    struct twocons cons = *(struct twocons*)arg;
+	struct twocons cons;
+	struct twopipe pipes;
+	struct twosock socks;
 
-    //printf("START WORKER\n");
+	if (MODE_COND) {
+		cons = *(struct twocons*)arg;
+	} else if (MODE_PIPE) {
+		pipes = *(struct twopipe*)arg;
+	} else if (MODE_SOCKET) {
+		socks = *(struct twosock*)arg;
+	}
+
 
     while(1) {
         struct julia_request req;
         struct julia_reply rep;
         int rc;
 
-        rc = conduct_read(cons.one, &req, sizeof(req));
+
+		if (MODE_COND) {
+			rc = conduct_read(cons.one, &req, sizeof(req));
+		} else if (MODE_PIPE) {
+			rc = read(pipes.one[0], &req, sizeof(req));
+		} else if (MODE_SOCKET) {
+			rc = read(socks.one[0], &req, sizeof(req));
+		}
+
         if(rc <= 0) {
         	printf("ERROR WORKER READ\n");
             conduct_write_eof(cons.two);
@@ -144,7 +221,17 @@ static void * worker_thread(void *arg)
         rep.count=req.count;
         rep.result=1;
 
-        rc = conduct_write(cons.two, &rep, sizeof(rep));
+
+
+		if (MODE_COND) {
+			rc = conduct_write(cons.two, &rep, sizeof(rep));
+		} else if (MODE_PIPE) {
+			rc =write(pipes.two[1], &rep, sizeof(rep));
+		} else if (MODE_SOCKET) {
+			rc = write(socks.two[1], &rep, sizeof(rep));
+		}
+
+
         if(rc < 0) {
         	printf("ERROR WORKER WRITE\n");
             conduct_write_eof(cons.two);
@@ -164,7 +251,112 @@ static void * worker_thread(void *arg)
 
 int main(int argc, char **argv)
 {
+
+	/******************PIPE************************/
+	int descriP1[2];
+	int descriP2[2];
+	if (pipe(descriP1) || pipe(descriP2)) {
+		perror("pipe eror");
+		return 1;
+	}
+
+	struct twopipe pipes;
+	pipes.one=descriP1;
+	pipes.two=descriP2;
+
+
+	/******************SOCKET************************/
+
+
+
+
+	char * server_filename = "/tmp/socket-server1";
+	char * client_filename = "/tmp/socket-client1";
+
+	unlink(server_filename);
+	unlink(client_filename);
+
+	struct sockaddr_un server_addr;
+	struct sockaddr_un client_addr;
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sun_family = AF_UNIX;
+	strncpy(server_addr.sun_path, server_filename, 104); // XXX: should be limited to about 104 characters, system dependent
+
+	memset(&client_addr, 0, sizeof(client_addr));
+	client_addr.sun_family = AF_UNIX;
+	strncpy(client_addr.sun_path, client_filename, 104);
+
+	// get socket
+	int sockclient1 = socket(AF_UNIX, SOCK_DGRAM, 0);
+	if(sockclient1<0){
+		perror("bind failed");
+	}
+
+	int sockserv1 = socket(AF_UNIX, SOCK_DGRAM, 0);
+	if(sockserv1<0){
+		perror("soket failed");
+	}
+
+	// bind
+	if(bind(sockclient1, (struct sockaddr *) &client_addr, sizeof(client_addr))){
+		 perror("bind failed");
+	}
+	if(bind(sockserv1, (struct sockaddr *) &server_addr, sizeof(server_addr))){
+		perror("bind failed");
+	}
+
+	// connect client to server_filename
+	connect(sockclient1, (struct sockaddr *) &server_addr, sizeof(server_addr));
+	//connect(sockserv1, (struct sockaddr *) &client_addr, sizeof(client_addr));
+
+
+	server_filename = "/tmp/socket-server2";
+	client_filename = "/tmp/socket-client2";
+
+	unlink(server_filename);
+	unlink(client_filename);
+
+
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sun_family = AF_UNIX;
+	strncpy(server_addr.sun_path, server_filename, 104); // XXX: should be limited to about 104 characters, system dependent
+
+	memset(&client_addr, 0, sizeof(client_addr));
+	client_addr.sun_family = AF_UNIX;
+	strncpy(client_addr.sun_path, client_filename, 104);
+
+	// get socket
+	int sockclient2 = socket(AF_UNIX, SOCK_DGRAM, 0);
+	if(sockclient2<0){
+		perror("bind failed");
+	}
+	int sockserv2 = socket(AF_UNIX, SOCK_DGRAM, 0);
+	if(sockserv2<0){
+		perror("soket failed");
+	}
+
+	// bind client to client_filename
+	bind(sockclient2, (struct sockaddr *) &client_addr, sizeof(client_addr));
+	bind(sockserv2, (struct sockaddr *) &server_addr, sizeof(server_addr));
+
+	// connect client to server_filename
+	connect(sockclient2, (struct sockaddr *) &server_addr, sizeof(server_addr));
+	//connect(sockserv2, (struct sockaddr *) &client_addr, sizeof(client_addr));
+
+	struct twosock socks;
+	int descriS1[2];
+	int descriS2[2];
+
+	descriS1[0]=sockserv1;
+	descriS1[1]=sockclient1;
+	descriS2[0]=sockserv2;
+	descriS2[1]=sockclient2;
+
+
+	socks.one=descriS1;
+	socks.two=descriS2;
     
+	/******************CONDUCT************************/
     struct twocons cons;
     int numthreads = 0;
     int rc;
@@ -193,6 +385,21 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+
+    /******************SELECTION OF MODE************************/
+    void * structToUse;
+    if(MODE_COND){
+    	structToUse=&cons;
+    }
+    else if(MODE_PIPE){
+    	structToUse=&pipes;
+    }
+    else if(MODE_SOCKET){
+    	structToUse=&socks;
+    }
+
+
+    /******************THREADS************************/
     if(numthreads <= 0)
         numthreads = sysconf(_SC_NPROCESSORS_ONLN);
     if(numthreads <= 0) {
@@ -207,15 +414,16 @@ int main(int argc, char **argv)
 
     pthread_t array[numthreads];
 
+
 	
     for(int i = 0; i < numthreads; ) {
 
 
-		rc += pthread_create(&( array[i]), NULL, order_thread, &cons);
+		rc += pthread_create(&( array[i]), NULL, order_thread, structToUse);
 
-		rc += pthread_create(&( array[i+1]), NULL, result_thread , &cons);
+		rc += pthread_create(&( array[i+1]), NULL, result_thread , structToUse);
 
-		rc += pthread_create(&( array[i+2]), NULL, worker_thread, &cons);
+		rc += pthread_create(&( array[i+2]), NULL, worker_thread, structToUse);
 
         if(rc != 0) {
             errno = rc;

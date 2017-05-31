@@ -8,29 +8,55 @@ LDFLAGS=-lm -lrt
 
 LDFLAGS_GTK = `pkg-config gtk+-3.0 --libs` $(LDFLAGS)  
 
-SRC_ASK =  concurrentconduct.c #conduct.c
+SRC_CONC =  concurrentconduct.c
 
-OBJ = $(SRC_ASK:.c=.o)	
+OBJ_CONC = $(SRC_CONC:.c=.o)
+
+SRC_N = conduct.c
+
+OBJ_N = $(SRC_N:.c=.o)
 
 EXEC =  julia test_3thread_depedency test_simple test_vectored_IO
 
+EXEC_C =  julia_C test_3thread_depedency_C test_simple_C test_vectored_IO_C
+
 all:$(EXEC)
+
+conc: $(EXEC_C)
 
 exemple/julia.o:
 	$(CC) $(CFLAGS_GTK) -c exemple/julia.c -o $@
 
-julia: $(OBJ)  exemple/julia.o
+#----------------------------N----------------------------#
+
+julia: $(OBJ_N)  exemple/julia.o
 	$(CC) $(CFLAGS_GTK) -o $@ $^ $(LDFLAGS_GTK)
 
-test_3thread_depedency: $(OBJ)  exemple/test_3thread_depedency.o
+test_3thread_depedency: $(OBJ_N)  exemple/test_3thread_depedency.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test_vectored_IO: $(OBJ)  exemple/test_vectored_IO.o
+test_vectored_IO: $(OBJ_N)  exemple/test_vectored_IO.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test_simple	: $(OBJ)  exemple/test_simple.o
+test_simple	: $(OBJ_N)  exemple/test_simple.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+
+#---------------------------CONC---------------------------#
+
+julia_C: $(OBJ_CONC)  exemple/julia.o
+	$(CC) $(CFLAGS_GTK) -o $@ $^ $(LDFLAGS_GTK)
+
+test_3thread_depedency_C: $(OBJ_CONC)  exemple/test_3thread_depedency.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_vectored_IO_C: $(OBJ_CONC)  exemple/test_vectored_IO.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_simple_C	: $(OBJ_CONC)  exemple/test_simple.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+#---------------------------------------------------------#
 
 
 .c.o:
@@ -41,3 +67,4 @@ clean:
 
 mrproper: clean
 	rm -rf $(EXEC)
+	rm -rf $(EXEC_C)

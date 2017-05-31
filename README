@@ -1,17 +1,19 @@
 Author:  raphaelauv
 
+IPC
+
 --------------------------------------------------------
-*  ATOMIC CIRCULAR-BUFFER PIPE IMPLEMENTATIONS (UNIX)  *
+*  ATOMIC CIRCULAR-BUFFER Message queue IMPLEMENTATIONS (UNIX)  *
 --------------------------------------------------------
 
 	- Custom Atomic Guaranteed limit
 	- Thread Safe ( Multiprocessing or Multithreading)
 	- Blocking 		read,write,write_eof
 	- Non Blocking 	read,write,write_eof
-	- Vectored 		read,write,write_eof
+	- Vectored 		read,write
 
 	- Compliant operations (try to read or write as far as ask by user while respecting atomic limit and blocking mode)
-	- Pipe can be anonymous or maped in a file
+	- Message queue can be anonymous or maped in a file
 	- Code Correctness (All systemCall and Mutex Operations return values are tested)
 	--------------------------------------------------------------------------------------------------------------------------
 	
@@ -51,5 +53,20 @@ Author:  raphaelauv
 
 
 
-strace -c -f ./julia
-time ./julia
+	POSSIBLE IMPROVEMENT
+	--------------------------------------------------------------------------------------------------------------------------
+	- Robust Mutex
+	- Signals corectness
+
+
+
+
+
+
+	--------------------------------------------------------------------------------------------------------------------------
+	strace -c -f ./julia
+	time ./julia
+
+
+
+

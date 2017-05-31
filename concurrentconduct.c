@@ -204,13 +204,6 @@ inline int clean_Conduct(struct conduct * cond,int flag) {
 
 		if (cond->mmap != MAP_FAILED) {
 
-			if(cond->fileName!=NULL){
-				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
-					printf("ERROR msync()\n");
-					error = 1;
-				}
-			}
-
 			if(flag==FLAG_CLEAN_DESTROY){
 				struct content * cont = (struct content *) cond->mmap;
 				clean_Content(cont);
@@ -220,15 +213,17 @@ inline int clean_Conduct(struct conduct * cond,int flag) {
 				printf("ERROR munmap()\n");
 				error = 1;
 			}
-
 			cond->mmap=NULL;
-
 		}
 
 		if(cond->fileName!=NULL){
 			if (flag == FLAG_CLEAN_DESTROY) {
-
 				if (unlink(cond->fileName)) {
+					error = 1;
+				}
+			}else{
+				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
+					printf("ERROR msync()\n");
 					error = 1;
 				}
 			}
@@ -241,7 +236,6 @@ inline int clean_Conduct(struct conduct * cond,int flag) {
 	return error;
 }
 
-//inline int copyFileName(const char * fileName ,struct conduct * cond);
 inline int copyFileName(const char * fileName ,struct conduct * cond){
 
 	cond->fileName = malloc(sizeof(char) * MAXIMUM_SIZE_NAME_CONDUCT);
@@ -269,19 +263,19 @@ extern inline int init_Content(struct content * cont) {
 	result+=pthread_condattr_init(&condAttrRead);
 	result+=pthread_condattr_setpshared(&condAttrRead,PTHREAD_PROCESS_SHARED);
 	result+=pthread_cond_init(&cont->conditionRead, &condAttrRead);
-	pthread_condattr_destroy(&condAttrRead);
+	result+=pthread_condattr_destroy(&condAttrRead);
 
 	pthread_condattr_t condAttrWrite;
 	result+=pthread_condattr_init(&condAttrWrite);
 	result+=pthread_condattr_setpshared(&condAttrWrite,PTHREAD_PROCESS_SHARED);
 	result+=pthread_cond_init(&cont->conditionWrite, &condAttrWrite);
-	pthread_condattr_destroy(&condAttrWrite);
+	result+=pthread_condattr_destroy(&condAttrWrite);
 
 	pthread_mutexattr_t mutexAttr;
 	result+=pthread_mutexattr_init(&mutexAttr);
 	result+=pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
 	result+=pthread_mutex_init(&cont->mutex, &mutexAttr);
-	pthread_mutexattr_destroy(&mutexAttr);	
+	result+=pthread_mutexattr_destroy(&mutexAttr);	
 
 	#if mode_Single_Reader_And_Writer
 	//if(mode_Single_Reader_And_Writer){
@@ -297,8 +291,8 @@ extern inline int init_Content(struct content * cont) {
 		result+=pthread_mutexattr_setpshared(&mutexAttrWrite, PTHREAD_PROCESS_SHARED);
 		result+=pthread_mutex_init(&cont->mutexWrite, &mutexAttrWrite);
 
-		pthread_mutexattr_destroy(&mutexAttrRead);
-		pthread_mutexattr_destroy(&mutexAttrWrite);
+		result+=pthread_mutexattr_destroy(&mutexAttrRead);
+		result+=pthread_mutexattr_destroy(&mutexAttrWrite);
 
 	//}
 	#endif
@@ -309,14 +303,14 @@ extern inline int init_Content(struct content * cont) {
 	result+=pthread_condattr_init(&condAttrRead_ToValidate);
 	result+=pthread_condattr_setpshared(&condAttrRead_ToValidate,PTHREAD_PROCESS_SHARED);
 	result+=pthread_cond_init(&cont->conditionRead_ToValide, &condAttrRead_ToValidate);
-	pthread_condattr_destroy(&condAttrRead_ToValidate);
+	result+=pthread_condattr_destroy(&condAttrRead_ToValidate);
 
 
 	pthread_condattr_t condAttrWrite_ToValidate;
 	result+=pthread_condattr_init(&condAttrWrite_ToValidate);
 	result+=pthread_condattr_setpshared(&condAttrWrite_ToValidate,PTHREAD_PROCESS_SHARED);
 	result+=pthread_cond_init(&cont->conditionWrite_ToValidate, &condAttrWrite_ToValidate);
-	pthread_condattr_destroy(&condAttrWrite_ToValidate);
+	result+=pthread_condattr_destroy(&condAttrWrite_ToValidate);
 	#endif
 
 
