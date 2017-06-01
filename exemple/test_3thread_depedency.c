@@ -1,4 +1,4 @@
-/* Par Juliusz Chroboczek, 2017. */
+	/* Par Juliusz Chroboczek, 2017. */
 
 #include <stdlib.h>
 #include <errno.h>
@@ -21,12 +21,12 @@
 
 #include "../conduct.h"
 
-#define QSIZE 1000
+#define QSIZE 100
 #define COUNT 10
 
-#define MODE_COND 0
+#define MODE_COND 1
 #define MODE_PIPE 0
-#define MODE_SOCKET 1
+#define MODE_SOCKET 0
 
 
 int valueTotest =100000;
@@ -66,9 +66,11 @@ struct twosock {
 
 short int calcul(struct julia_request * req){
 	short int result=0;
+	/*
 	for(int i=0;i<req->count;i++){
 		result+=req->x*req->y;
 	}
+	*/
 	return result;
 }
 
@@ -87,8 +89,10 @@ static void * result_thread(void *arg){
 		socks = *(struct twosock*)arg;
 	}
 
-	struct timespec t1;
+	
 	//printf("START RESULT\n");
+
+	int nbDone=0;
 
     while(1) {
         struct julia_reply rep;
@@ -109,18 +113,27 @@ static void * result_thread(void *arg){
             return NULL;
         }
 
-        if(rep.number > valueTotest -1){
+        if(rc!= sizeof(rep)){
+        	printf("ERROR RESULT\n");
+        	return NULL;
+        }
 
-    		clock_gettime(CLOCK_MONOTONIC, &t1);
-
-    		printf("Repaint done in %.6lfs\n",
-           ((double)t1.tv_sec - t0.tv_sec) +
-           ((double)t1.tv_nsec - t0.tv_nsec) / 1.0E9);
+        nbDone++;
+        if(nbDone > valueTotest -1){
     		break;
         }
         //printf("RESULT : %d\n",rep.number);
 
     }
+    		struct timespec t1;
+
+			clock_gettime(CLOCK_MONOTONIC, &t1);
+
+    		printf("Repaint done in %.6lfs\n",
+           ((double)t1.tv_sec - t0.tv_sec) +
+           ((double)t1.tv_nsec - t0.tv_nsec) / 1.0E9);
+
+
     //printf("result : END\n");
     return NULL;
 }
@@ -142,13 +155,14 @@ static void * order_thread(void *arg){
 
 	int i=0;
 
+
     while(1) {
         struct julia_request req;
         req.number=i;
         i++;
-        req.count=i*10;
-        req.x=i%5;
-        req.y=i%7;
+        req.count=i;
+        req.x=i;
+        req.y=i;
 
         int rc;
 
@@ -166,7 +180,12 @@ static void * order_thread(void *arg){
 			return NULL;
 		}
 
-		if(i>valueTotest +nbASK ){
+		if (rc != sizeof(req)) {
+			printf("ERROR ORDER\n");
+			return NULL;
+		}
+
+		if(i>valueTotest ){
 
 			
 			break;
@@ -193,7 +212,7 @@ static void * worker_thread(void *arg)
 		socks = *(struct twosock*)arg;
 	}
 
-
+	int nbDone=0;
     while(1) {
         struct julia_request req;
         struct julia_reply rep;
@@ -213,6 +232,11 @@ static void * worker_thread(void *arg)
             conduct_write_eof(cons.two);
             return NULL;
         }
+
+        if (rc != sizeof(req)) {
+			printf("ERROR WOKER\n");
+			return NULL;
+		}
 
 
         rep.x=req.x;
@@ -238,7 +262,13 @@ static void * worker_thread(void *arg)
             return NULL;
         }
 
-        if(rep.number>valueTotest ){
+        if (rc != sizeof(rep)) {
+			printf("ERROR WOKER\n");
+			return NULL;
+		}
+
+		nbDone++;
+        if(nbDone>valueTotest -1 ){
 			break;
 		}
 
@@ -406,15 +436,13 @@ int main(int argc, char **argv)
         perror("sysconf(_SC_NPROCESSORS_ONLN)");
         exit(1);
     }
-    printf("Running %d threads.\n", nbASK *3 *numthreads);
+    
 
-    numthreads*=nbASK * 3;
-
-    nbASK = numthreads * nbASK ;
+    numthreads=3*nbASK;
 
     pthread_t array[numthreads];
 
-
+    printf("Running %d threads.\n", numthreads);
 	
     for(int i = 0; i < numthreads; ) {
 
@@ -439,6 +467,15 @@ int main(int argc, char **argv)
     for(int i = 0; i < numthreads; i++) {
 		pthread_join(array[i], NULL);
     }
+    /*
+	struct timespec t1;
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+
+    		printf("Repaint done in %.6lfs\n",
+           ((double)t1.tv_sec - t0.tv_sec) +
+           ((double)t1.tv_nsec - t0.tv_nsec) / 1.0E9);
+
+     */
 
     return 0;
 }
