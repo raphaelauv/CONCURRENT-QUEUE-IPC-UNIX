@@ -8,7 +8,7 @@ LDFLAGS=-lm -lrt
 
 LDFLAGS_GTK = `pkg-config gtk+-3.0 --libs` $(LDFLAGS)  
 
-SRC_CONC =  concurrentconduct.c
+SRC_CONC =  concurrentconduct.c sortedLinkedList.c
 
 OBJ_CONC = $(SRC_CONC:.c=.o)
 

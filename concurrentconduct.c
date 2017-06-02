@@ -6,6 +6,7 @@
  */
 
 #include "conduct.h"
+#include "sortedLinkedList.h"
 
 #define FILE_mode 0666
 
@@ -21,7 +22,7 @@
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
 
-#define mode_Single_Reader_And_Writer 1
+#define mode_Single_Reader_And_Writer 0
 
 #define mode_Multiple_Reader_And_Writer ! mode_Single_Reader_And_Writer
 
@@ -222,10 +223,14 @@ inline int clean_Conduct(struct conduct * cond,int flag) {
 					error = 1;
 				}
 			}else{
+
+				//TODO TAKE MUTEX FIRST
+				/*
 				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
-					printf("ERROR msync()\n");
+					perror("ERROR msync()\n");
 					error = 1;
 				}
+				*/
 			}
 			free(cond->fileName);
 			cond->fileName=NULL;
@@ -763,11 +768,9 @@ extern inline int unlockMutexFlag(struct content * ct,unsigned char flag){
 
 extern inline int unlockMutexAll(struct content * ct,unsigned char flag){
 	#if mode_Single_Reader_And_Writer
-	//if(mode_Single_Reader_And_Writer){
 		if(unlockMutexFlag(ct,flag)){
 			return -1;
 		}
-	//}
 	#endif
 
 	if(pthread_mutex_unlock(&ct->mutex)){
@@ -779,11 +782,9 @@ extern inline int unlockMutexAll(struct content * ct,unsigned char flag){
 extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 
 	#if mode_Single_Reader_And_Writer
-	//if(mode_Single_Reader_And_Writer){
 		if(lockMutexFlag(ct,flag)){
 	 	 	return -1;
 	 	}
-	//}
 	#endif
 	
 	int error=0;
@@ -892,7 +893,7 @@ retry_it:
 
 	}while(ct->isEOF || ct->isEmpty || needReEval);
 
-	size_t localStart=ct->start;
+
 
 	//data.isEOF=ct->isEOF;
 
@@ -905,6 +906,8 @@ retry_it:
 	if (pthread_mutex_unlock(&ct->mutex)) {
 		return -1;
 	}
+	size_t localStart=data.start;
+
 
 	eval_limit_loops(&data,INTERNAL_FLAG_READ);
 
@@ -916,9 +919,11 @@ retry_it:
 		return -1;
 	}
 
+	int beanInside=0;
+
 	#if mode_Multiple_Reader_And_Writer
 	while(ct->start!=localStart){
-
+		beanInside=1;
 		//printf("READ LOCK car j'attends une ecriture : %d pour %d\n",ct->start,localStart);
 		if (pthread_cond_wait(&ct->conditionRead_ToValide, &ct->mutex)) {
 			unlockMutexAll(ct, flag);
@@ -926,6 +931,10 @@ retry_it:
 		}
 	}
 	#endif
+
+	if(beanInside){
+		printf("READ SORTIE D ATTENDE DE VALIDATION\n");
+	}
 
 	ct->start=localTmpStart;
 
@@ -942,6 +951,8 @@ retry_it:
 		return -1;
 	}
 	#endif
+
+
 
 	if(pthread_cond_broadcast(&ct->conditionWrite)){
 		return -1;
@@ -1055,21 +1066,21 @@ retry_it:
 
 	}while(ct->isEOF || (data.end==ct->start && !ct->isEmpty) || data.sizeToManipulate>data.sizeAvailable);
 
-	size_t localEnd=ct->end;
 
 	//data.isEOF=ct->isEOF;
 
-
 	int localTmpEnd;
 	
-	localTmpEnd= data.end + data.sizeToManipulate;
+	localTmpEnd = data.end + data.sizeToManipulate;
 	localTmpEnd %= data.sizeMax;
-	ct->tmpEnd=localTmpEnd;
+	ct->tmpEnd = localTmpEnd;
 
 
 	if (pthread_mutex_unlock(&ct->mutex)) {
 		return -1;
 	}
+
+	size_t localEnd=data.end;
 
 	eval_limit_loops(&data,INTERNAL_FLAG_WRITE);
 
@@ -1081,9 +1092,10 @@ retry_it:
 		return -1;
 	}
 
+	int beanInside=0;
 	#if mode_Multiple_Reader_And_Writer
 	while(ct->end!=localEnd){
-
+		beanInside=1;
 		//printf("WRITE LOCK car j'attends une ecriture : %d pour %d\n",ct->end,localEnd)
 
 		if (pthread_cond_wait(&ct->conditionWrite_ToValidate, &ct->mutex)) {
@@ -1092,6 +1104,10 @@ retry_it:
 		}
 	}
 	#endif
+
+	if (beanInside) {
+		printf("WRITE SORTIE D ATTENDE DE VALIDATION\n");
+	}
 
 	ct->end=localTmpEnd;
 
@@ -1108,6 +1124,7 @@ retry_it:
 		return -1;
 	}
 	#endif
+
 
 	if(pthread_cond_broadcast(&ct->conditionRead)){
 		return -1;
