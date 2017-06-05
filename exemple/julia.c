@@ -15,7 +15,7 @@
 
 #define MODE_FILE 1
 
-#define MODE_BLOCK 0
+#define MODE_BLOCK 1
 
 
 #define MODE_ANONYM !MODE_FILE
