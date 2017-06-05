@@ -22,7 +22,7 @@
 #define MAXIMUM_SIZE_NAME_CONDUCT 100
 #define LIMIT_SHOW "————————————————————————"
 
-#define mode_Single_Reader_And_Writer 0
+#define mode_Single_Reader_And_Writer 1
 
 #define mode_Multiple_Reader_And_Writer ! mode_Single_Reader_And_Writer
 

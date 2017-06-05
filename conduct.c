@@ -5,7 +5,7 @@
 
 #include "conduct.h"
 
-#define MODE_MEMCPY 1						// TRUE -> use memcpy standard C library function else it don't
+#define MODE_MEMCPY 0						// TRUE -> use memcpy standard C library function else it don't
 
 #define FILE_mode 0666						// FILE mode opening
 #define FLAG_CLEAN_DESTROY 1
@@ -207,7 +207,7 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 			}
 
 			if (munmap(cond->mmap, cond->size_mmap)) {
-				printf("ERROR munmap()\n");
+				//printf("ERROR munmap()\n");
 				error = 1;
 			}
 			cond->mmap=NULL;
@@ -278,6 +278,9 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 			goto cleanup;
 		}
 
+
+		unlink(name);
+
 		fd = open(name,O_CREAT | O_RDWR | O_TRUNC,FILE_mode);
 
 		if (fd < 0) {
@@ -294,7 +297,6 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 			if (ftruncate(fd, cond->size_mmap)) {
 				goto cleanup;
 			}
-
 			/*
 			close(fd);
 			fd=-1;
@@ -303,6 +305,8 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 				goto cleanup;
 			}
 			*/
+
+		}else{
 
 		}
 
@@ -604,7 +608,7 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 				ct->start=0;
 			}else{
 				if (ct->end != ct->sizeMax) {
-					printf("ERROR DEPLACEMENT FIN BUFFER CIRCULAIRE\n");
+					//printf("ERROR DEPLACEMENT FIN BUFFER CIRCULAIRE\n");
 				}
 				ct->end=0;
 			}
@@ -710,6 +714,7 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 	}
 
 
+
 retry_it:
 
 	if(retry){
@@ -774,8 +779,11 @@ retry_it:
 
 	}while(ct->isEOF || ct->isEmpty || needReEval);
 
+
+
 	eval_limit_loops(ct,&data,INTERNAL_FLAG_READ);
 
+	
 	//printf("READ passByMiddle : %d | for1 : %d | for2: %d\n",data.passByMiddle,(int)data.firstMaxFor,(int)data.secondMaxFor);
 
 	apply_loops(&data,ct,iov,INTERNAL_FLAG_READ);

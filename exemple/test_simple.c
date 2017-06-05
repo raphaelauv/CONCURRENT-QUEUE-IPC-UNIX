@@ -13,12 +13,14 @@ int main(int argc, char **argv)
 
 	c=conduct_open("TOTO");
 
-	conduct_show(c);
+	
 
 	if(c==NULL){
 		printf("OPEN FAIL\n");
 		return -1;
 	}
+
+	conduct_show(c);
 
 	struct conduct *a =c;
 
