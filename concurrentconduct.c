@@ -180,10 +180,8 @@ inline void clean_Content(struct content * cont) {
 		pthread_mutex_destroy(&cont->mutex);
 
 		#if mode_Single_Reader_And_Writer
-		//if(mode_Single_Reader_And_Writer){
-			pthread_mutex_destroy(&cont->mutexRead);
-			pthread_mutex_destroy(&cont->mutexWrite);
-		//}
+		pthread_mutex_destroy(&cont->mutexRead);
+		pthread_mutex_destroy(&cont->mutexWrite);
 		#endif
 		
 		#if mode_Multiple_Reader_And_Writer
@@ -208,6 +206,19 @@ inline int clean_Conduct(struct conduct * cond,int flag) {
 			if(flag==FLAG_CLEAN_DESTROY){
 				struct content * cont = (struct content *) cond->mmap;
 				clean_Content(cont);
+			}else{
+
+				//TAKE MUTEX
+
+				/*
+				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
+					printf("ERROR msync()\n");
+					error = 1;
+				}
+				*/
+
+				//RELEASE MUTEX
+
 			}
 
 			if (munmap(cond->mmap, cond->size_mmap)) {
@@ -222,15 +233,6 @@ inline int clean_Conduct(struct conduct * cond,int flag) {
 				if (unlink(cond->fileName)) {
 					error = 1;
 				}
-			}else{
-
-				//TODO TAKE MUTEX FIRST
-				/*
-				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
-					perror("ERROR msync()\n");
-					error = 1;
-				}
-				*/
 			}
 			free(cond->fileName);
 			cond->fileName=NULL;
@@ -283,7 +285,6 @@ extern inline int init_Content(struct content * cont) {
 	result+=pthread_mutexattr_destroy(&mutexAttr);	
 
 	#if mode_Single_Reader_And_Writer
-	//if(mode_Single_Reader_And_Writer){
 
 		pthread_mutexattr_t mutexAttrRead;
 		pthread_mutexattr_t mutexAttrWrite;
@@ -299,7 +300,6 @@ extern inline int init_Content(struct content * cont) {
 		result+=pthread_mutexattr_destroy(&mutexAttrRead);
 		result+=pthread_mutexattr_destroy(&mutexAttrWrite);
 
-	//}
 	#endif
 		
 
@@ -724,10 +724,12 @@ extern inline int lockMutexFlag(struct content * ct, unsigned char flag) {
 
 		if ((flag & INTERNAL_FLAG_WRITE) != 0) {
 			if (pthread_mutex_trylock(&ct->mutexWrite)) {
+				errno=EWOULDBLOCK;
 				return -1;
 			}
 		} else {
 			if (pthread_mutex_trylock(&ct->mutexRead)) {
+				errno=EWOULDBLOCK;
 				return -1;
 			}
 		}
@@ -781,17 +783,17 @@ extern inline int unlockMutexAll(struct content * ct,unsigned char flag){
 
 extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 
+	int error=0;
+
 	#if mode_Single_Reader_And_Writer
 		if(lockMutexFlag(ct,flag)){
 	 	 	return -1;
 	 	}
 	#endif
 	
-	int error=0;
-
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
-
 		if (pthread_mutex_trylock(&ct->mutex)) {
+			errno=EWOULDBLOCK;
 			error=-1;
 		}
 	} else {
@@ -803,8 +805,11 @@ extern inline int lockMutexAll(struct content * ct,unsigned char flag){
 
 	#if mode_Single_Reader_And_Writer
 	if(error){
+		if(unlockMutexFlag(ct,flag)){
+			return -1;
+		}
 		errno=EWOULDBLOCK;
-		unlockMutexFlag(ct,flag);
+		return -1;
 	}
 	#endif
 
@@ -855,8 +860,15 @@ retry_it:
 
 
 		if(ct->isEOF) { //atomic_load(&(ct->isEOF))
-			errno = EPIPE; // Before because unlockMutexAll can fail and eedit errno
-			unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
+			if(unlockMutexAll(ct,flag | INTERNAL_FLAG_READ)){
+				return -1;
+			}
+
+			if (retry) {
+				return data.sizeReallyManipulate;
+			}
+
+			errno = EPIPE;
 			return -1;
 		}
 
@@ -870,14 +882,19 @@ retry_it:
 
 		if (ct->isEmpty) {
 			if(retry){
-				unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
+				if(unlockMutexAll(ct,flag | INTERNAL_FLAG_READ)){
+					return -1;
+				}
 				errno=0;
 				return data.sizeReallyManipulate;
 			}
 
 			if ((flag & FLAG_O_NONBLOCK) != 0) {
+
+				if(unlockMutexAll(ct,flag | INTERNAL_FLAG_READ)){
+					return -1;
+				}
 				errno=EWOULDBLOCK;
-				unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
 				return -1;
 			}else{
 				if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
@@ -924,26 +941,29 @@ retry_it:
 	#if mode_Multiple_Reader_And_Writer
 	while(ct->start!=localStart){
 		beanInside=1;
-		//printf("READ LOCK car j'attends une ecriture : %d pour %d\n",ct->start,localStart);
+		//printf("READ LOCK car j'attends l ecriture : %d pour valider %d\n",ct->start,localStart);fflush(NULL);
+
+
 		if (pthread_cond_wait(&ct->conditionRead_ToValide, &ct->mutex)) {
+			printf("WAIT FAILL\n");
 			unlockMutexAll(ct, flag);
 			return -1;
 		}
 	}
 	#endif
-
+/*
 	if(beanInside){
-		printf("READ SORTIE D ATTENDE DE VALIDATION\n");
+		printf("READ SORTIE D ATTENDE DE VALIDATION %d pour valider %d\n",ct->start,localStart);
+		fflush(NULL);
+	}else{
+		printf("READ SORTIE NORMALE DE CONFIRMATION %d pour valider %d\n",ct->start,localStart);
+		fflush(NULL);
 	}
-
+*/
 	ct->start=localTmpStart;
 
 	if (ct->start == ct->end) {
 		ct->isEmpty = 1;
-	}
-
-	if (pthread_mutex_unlock(&ct->mutex)) {
-		return -1;
 	}
 
 	#if mode_Multiple_Reader_And_Writer
@@ -952,6 +972,9 @@ retry_it:
 	}
 	#endif
 
+	if (pthread_mutex_unlock(&ct->mutex)) {
+		return -1;
+	}
 
 
 	if(pthread_cond_broadcast(&ct->conditionWrite)){
@@ -964,11 +987,11 @@ retry_it:
 		}
 	#endif
 
-		if(data.sizeReallyManipulate<data.count){
-			retry=1;
-			data.passByMiddle=0;// Reset value
-			goto retry_it;
-		}
+	if(data.sizeReallyManipulate<data.count){
+		retry=1;
+		data.passByMiddle=0;// Reset value
+		goto retry_it;
+	}
 
 	return data.sizeReallyManipulate;
 
@@ -1016,8 +1039,11 @@ retry_it:
 
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
-		printf("EOF PUT INSIDE\n");
-		unlockMutexAll(ct,flag);
+
+		if (unlockMutexAll(ct,flag)) {
+			return -1;
+		}
+
 		return 0;
 	}
 
@@ -1034,7 +1060,15 @@ retry_it:
 		data.isEmpty=ct->isEmpty;
 
 		if (ct->isEOF) {
-			unlockMutexAll(ct,flag);
+
+			if(unlockMutexAll(ct,flag)){
+				return -1;
+			}
+
+			if (retry) {
+				return data.sizeReallyManipulate;
+			}
+
 			errno = EPIPE;
 			return -1;
 		}
@@ -1047,15 +1081,20 @@ retry_it:
 			//buffer is FULL for the moment or there is not sufisant place
 
 			if(retry){
+				if(unlockMutexAll(ct,flag | INTERNAL_FLAG_READ)){
+					return -1;
+				}
 				errno=0;
-				unlockMutexAll(ct,flag | INTERNAL_FLAG_READ);
 				return data.sizeReallyManipulate;
 			}
 
 			if ((flag & FLAG_O_NONBLOCK) != 0 ) {
+				if(unlockMutexAll(ct,flag)){
+					return -1;
+				}
 				errno=EWOULDBLOCK;
-				unlockMutexAll(ct,flag);
 				return -1;
+
 			}else{
 				if (pthread_cond_wait(&ct->conditionWrite, &ct->mutex)) {
 					unlockMutexAll(ct,flag);
@@ -1096,27 +1135,30 @@ retry_it:
 	#if mode_Multiple_Reader_And_Writer
 	while(ct->end!=localEnd){
 		beanInside=1;
-		//printf("WRITE LOCK car j'attends une ecriture : %d pour %d\n",ct->end,localEnd)
+		//printf("WRITE LOCK car j'attends l ecriture : %d pour valider %d\n",ct->end,localEnd);fflush(NULL);
+
 
 		if (pthread_cond_wait(&ct->conditionWrite_ToValidate, &ct->mutex)) {
+			printf("WAIT FAILL\n");
+			fflush(NULL);
 			unlockMutexAll(ct, flag);
 			return -1;
 		}
 	}
 	#endif
-
+/*
 	if (beanInside) {
-		printf("WRITE SORTIE D ATTENDE DE VALIDATION\n");
+		printf("WRITE SORTIE D ATTENDE DE VALIDATION %d pour valider %d\n",ct->end,localEnd);
+		fflush(NULL);
+	}else{
+		printf("WRITE SORTIE NORMALE DE CONFIRMATION %d pour valider %d\n",ct->end,localEnd);
+		fflush(NULL);
 	}
-
+*/
 	ct->end=localTmpEnd;
 
 	if (data.sizeToManipulate > 0) {
 		ct->isEmpty = 0;
-	}
-
-	if (pthread_mutex_unlock(&ct->mutex)) {
-		return -1;
 	}
 
 	#if mode_Multiple_Reader_And_Writer
@@ -1125,15 +1167,19 @@ retry_it:
 	}
 	#endif
 
+	if (pthread_mutex_unlock(&ct->mutex)) {
+		return -1;
+	}
+
 
 	if(pthread_cond_broadcast(&ct->conditionRead)){
 		return -1;
 	}
 
 	#if mode_Single_Reader_And_Writer
-		if(unlockMutexFlag(ct,INTERNAL_FLAG_WRITE)){
-			return -1;
-		}
+	if(unlockMutexFlag(ct,INTERNAL_FLAG_WRITE)){
+		return -1;
+	}
 	#endif
 
 	if (data.sizeReallyManipulate < data.count) {

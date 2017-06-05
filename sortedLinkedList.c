@@ -1,8 +1,23 @@
-
 #include "sortedLinkedList.h"
 
- 
-void sortedInsert(struct node** head_ref, struct node* new_node)
+
+ int removeFirst(struct node** head_ref, struct node* nodeRemoved)
+{
+	 if(*head_ref == NULL){
+		 return -1;
+	 }
+
+	nodeRemoved->myStart = (*head_ref)->myStart;
+	nodeRemoved->myEnd = (*head_ref)->myEnd;
+
+	struct node* current=(*head_ref)->next;
+
+	*head_ref = current;
+
+	return 0;
+}
+
+ void sortedInsert(struct node** head_ref, struct node* new_node)
 {
     struct node* current;
     /* Special case for the head end */
@@ -25,7 +40,21 @@ void sortedInsert(struct node** head_ref, struct node* new_node)
     }
 }
 
-struct node *newNode(int myStart,int myEnd)
+struct node* deleteNode(struct nodeList* list,int myStart,int myEnd){
+ 	list->currentPosition--;
+
+ 	return NULL;
+ }
+
+
+struct node* newNode2(struct nodeList* list,int myStart,int myEnd){
+	if(list->currentPosition==list->size){
+		//wait
+	}
+	return NULL;
+}
+
+struct node* newNode(int myStart,int myEnd)
 {
     /* allocate node */
     struct node* new_node =

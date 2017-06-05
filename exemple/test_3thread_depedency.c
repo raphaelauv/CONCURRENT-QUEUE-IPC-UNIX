@@ -29,6 +29,7 @@
 #define MODE_SOCKET 0
 
 
+//int valueTotest =10;
 int valueTotest =100000;
 int nbThreadsMultiplier = 10;
 int nbASK = 0;
@@ -93,13 +94,23 @@ static void * result_thread(void *arg){
 	//printf("START RESULT\n");
 
 	int nbDone=0;
-
+	int retry;
     while(1) {
         struct julia_reply rep;
         int rc;
 
 		if (MODE_COND) {
-			rc = conduct_read(cons.two, &rep, sizeof(rep));
+
+			retry=1;
+			while (retry) {
+				rc = conduct_read_nb(cons.two, &rep, sizeof(rep));
+				if (rc == -1 && errno == EWOULDBLOCK) {
+					sched_yield();
+				} else {
+					retry = 0;
+				}
+			}
+
 		} else if (MODE_PIPE) {
 			rc = read(pipes.two[0], &rep, sizeof(rep));
 		} else if (MODE_SOCKET) {
@@ -155,7 +166,7 @@ static void * order_thread(void *arg){
 
 	int i=0;
 
-
+	int retry;
     while(1) {
         struct julia_request req;
         req.number=i;
@@ -167,7 +178,19 @@ static void * order_thread(void *arg){
         int rc;
 
 		if (MODE_COND) {
-			rc = conduct_write(cons.one, &req, sizeof(req));
+
+
+			retry=1;
+			while (retry) {
+				rc = conduct_write_nb(cons.one, &req, sizeof(req));
+				if (rc == -1 && errno == EWOULDBLOCK) {
+					sched_yield();
+				} else {
+					retry = 0;
+				}
+			}
+
+
 		} else if (MODE_PIPE) {
 			rc =write(pipes.one[1], &req, sizeof(req));
 		} else if (MODE_SOCKET) {
@@ -211,7 +234,7 @@ static void * worker_thread(void *arg)
 	} else if (MODE_SOCKET) {
 		socks = *(struct twosock*)arg;
 	}
-
+	int retry;
 	int nbDone=0;
     while(1) {
         struct julia_request req;
@@ -220,7 +243,18 @@ static void * worker_thread(void *arg)
 
 
 		if (MODE_COND) {
-			rc = conduct_read(cons.one, &req, sizeof(req));
+
+			retry=1;
+
+			while (retry) {
+				rc = conduct_read_nb(cons.one, &req, sizeof(req));
+				if (rc == -1 && errno == EWOULDBLOCK) {
+					sched_yield();
+				} else {
+					retry = 0;
+				}
+			}
+
 		} else if (MODE_PIPE) {
 			rc = read(pipes.one[0], &req, sizeof(req));
 		} else if (MODE_SOCKET) {
@@ -248,7 +282,20 @@ static void * worker_thread(void *arg)
 
 
 		if (MODE_COND) {
-			rc = conduct_write(cons.two, &rep, sizeof(rep));
+
+			int retry=1;
+			while(retry){
+				rc = conduct_write_nb(cons.two, &rep, sizeof(rep));
+				if(rc==-1 && errno==EWOULDBLOCK){
+					sched_yield();
+				}else if(rc==-1){
+					printf("ERRNO PAS A EWOULD\n");
+				}else{
+					retry=0;
+				}
+			}
+
+
 		} else if (MODE_PIPE) {
 			rc =write(pipes.two[1], &rep, sizeof(rep));
 		} else if (MODE_SOCKET) {

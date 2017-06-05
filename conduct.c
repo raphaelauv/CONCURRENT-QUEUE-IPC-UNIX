@@ -5,7 +5,7 @@
 
 #include "conduct.h"
 
-#define MODE_MEMCPY 0						// TRUE -> use memcpy standard C library function else it don't
+#define MODE_MEMCPY 1						// TRUE -> use memcpy standard C library function else it don't
 
 #define FILE_mode 0666						// FILE mode opening
 #define FLAG_CLEAN_DESTROY 1
@@ -191,6 +191,19 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 			if(flag==FLAG_CLEAN_DESTROY){
 				struct content * cont = (struct content *) cond->mmap;
 				clean_Content(cont);
+			}else{
+
+				//TAKE MUTEX
+
+				/*
+				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
+					printf("ERROR msync()\n");
+					error = 1;
+				}
+				*/
+
+				//RELEASE MUTEX
+
 			}
 
 			if (munmap(cond->mmap, cond->size_mmap)) {
@@ -205,12 +218,8 @@ extern inline int clean_Conduct(struct conduct * cond,int flag) {
 				if (unlink(cond->fileName)) {
 					error = 1;
 				}
-			}else{
-				if (msync(cond->mmap, cond->size_mmap, MS_SYNC)) {
-					printf("ERROR msync()\n");
-					error = 1;
-				}
 			}
+			
 			free(cond->fileName);
 			cond->fileName=NULL;
 		}
@@ -349,7 +358,9 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 		goto cleanup;
 	}
 
-	msync(cond->mmap,cond->size_mmap,MS_SYNC);//TODO test return value and MS_INVALIDATE
+
+	//NOT REALLY NECESSERY
+	msync(cond->mmap,cond->size_mmap,MS_SYNC);//TODO test return value and MS_INVALIDATE  , 
 
 	return cond;
 
@@ -689,7 +700,8 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	if ((flag & FLAG_O_NONBLOCK) != 0) {
 		if(pthread_mutex_trylock(&ct->mutex)){
-			return 0;
+			errno=EWOULDBLOCK;
+			return -1;
 		}
 	}else{
 		if (pthread_mutex_lock(&ct->mutex)) {
@@ -714,6 +726,12 @@ retry_it:
 			if(pthread_mutex_unlock(&ct->mutex)){
 				return -1;
 			}
+
+			if (retry) {
+				errno=0;
+				return data.sizeReallyManipulate;
+			}
+
 			errno = EPIPE;
 			return -1;
 		}
@@ -741,7 +759,7 @@ retry_it:
 					return -1;
 				}
 				errno=EWOULDBLOCK;
-				return 0;
+				return -1; //ou 0
 			}else{
 				if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
 					pthread_mutex_unlock(&ct->mutex);
@@ -835,13 +853,21 @@ retry_it:
 	
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
-		pthread_mutex_unlock(&ct->mutex);
+		if(pthread_mutex_unlock(&ct->mutex)){
+			return -1;
+		}
 		return 0;
 	}
 
 	do{
 		if (ct->isEOF) {
 			pthread_mutex_unlock(&ct->mutex);
+
+			if (retry) {
+				errno=0;
+				return data.sizeReallyManipulate;
+			}
+
 			errno = EPIPE;
 			return -1;
 		}
@@ -866,7 +892,7 @@ retry_it:
 					return -1;
 				}
 				errno=EWOULDBLOCK;
-				return 0;
+				return -1;//ou 0
 			}else{
 				if (pthread_cond_wait(&ct->conditionWrite, &ct->mutex)) {
 					pthread_mutex_unlock(&ct->mutex);
