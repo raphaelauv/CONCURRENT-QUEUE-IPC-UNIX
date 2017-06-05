@@ -50,10 +50,20 @@ IPC
 	TEST FILES
 	--------------------------------------------------------------------------------------------------------------------------
 	- julia
+			#define MODE_FILE 1		named file mode
+			#define MODE_BLOCK 1	mode blocking
+
 
 	- test_3thread_depedency	launch 3 type of threads with 2 shared conduct
 
 			threads ORDER write in Conduct 1 || threads WORKER read in Conduct 1 and after write in conduct 2 || threads RESULT read Conduct 2
+
+
+			#define QSIZE 100  		the number of oder per threads
+			#define MODE_COND 1		mode conduct is activate , others are not
+			#define MODE_PIPE 0
+			#define MODE_SOCKET 0
+
 			
 	- test_vectored_IO
 

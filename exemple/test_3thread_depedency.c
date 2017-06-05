@@ -21,9 +21,9 @@
 
 #include "../conduct.h"
 
-#define QSIZE 100
-#define COUNT 10
 
+#define COUNT 10
+#define QSIZE 100
 #define MODE_COND 1
 #define MODE_PIPE 0
 #define MODE_SOCKET 0

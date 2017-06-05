@@ -15,6 +15,9 @@
 
 #define MODE_FILE 1
 
+#define MODE_BLOCK 0
+
+
 #define MODE_ANONYM !MODE_FILE
 
 /* Voir la fonction toc ci-dessous. */
@@ -79,12 +82,27 @@ static void *
 julia_thread(void *arg)
 {
     struct twocons cons = *(struct twocons*)arg;
+    int retry;
     while(1) {
         struct julia_request req;
         struct julia_reply rep;
         int rc;
 
-        rc = conduct_read(cons.one, &req, sizeof(req));
+        if (MODE_BLOCK) {
+        	rc = conduct_read(cons.one, &req, sizeof(req));
+        }else{
+
+        	retry=1;
+			while (retry) {
+				rc = conduct_read_nb(cons.one, &req, sizeof(req));
+				if (rc == -1 && errno == EWOULDBLOCK) {
+					sched_yield();
+				} else {
+					retry = 0;
+				}
+			}
+        }        
+
         if(rc <= 0) {
             conduct_write_eof(cons.two);
             return NULL;
@@ -95,7 +113,26 @@ julia_thread(void *arg)
         for(int i = 0; i < req.count; i++) {
             rep.data[i] = julia(toc(req.x + i, rep.y), julia_c);
         }
-        rc = conduct_write(cons.two, &rep, sizeof(rep));
+        
+
+
+        if (MODE_BLOCK) {
+        	rc = conduct_write(cons.two, &rep, sizeof(rep));
+        }else{
+
+        	retry=1;
+			while (retry) {
+				rc = conduct_write_nb(cons.two, &rep, sizeof(rep));
+				if (rc == -1 && errno == EWOULDBLOCK) {
+					sched_yield();
+				} else {
+					retry = 0;
+				}
+			}
+        }
+
+
+
         if(rc < 0) {
             conduct_write_eof(cons.two);
             return NULL;
@@ -146,11 +183,29 @@ paintit(struct twocons *cons, cairo_t *cr, int repcount)
     cairo_surface_t *surface;
     unsigned *data;
     unsigned rgb;
-
+    int retry;
     for(int i = 0; i < repcount; i++) {
         struct julia_reply rep;
         int rc;
-        rc = conduct_read(cons->two, &rep, sizeof(rep));
+
+
+
+
+        if (MODE_BLOCK) {
+        	rc = conduct_read(cons->two, &rep, sizeof(rep));
+        }else{
+
+        	retry=1;
+			while (retry) {
+				rc = conduct_read_nb(cons->two, &rep, sizeof(rep));
+				if (rc == -1 && errno == EWOULDBLOCK) {
+					sched_yield();
+				} else {
+					retry = 0;
+				}
+			}
+        }
+
         if(rc <= 0) {
             perror("conduct_recv");
             return;
@@ -192,14 +247,33 @@ draw_callback (GtkWidget *widget, cairo_t *cr, gpointer data)
 
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
-
+    int retry;
     for(int j = y1; j <= y2; j++) {
         for(int i = x1; i <= x2; i += COUNT) {
             struct julia_request req;
             req.x = i;
             req.y = j;
             req.count = min(COUNT, x2 - i);
-            rc = conduct_write(cons->one, &req, sizeof(req));
+
+
+
+	        if (MODE_BLOCK) {
+	        	rc = conduct_write(cons->one, &req, sizeof(req));
+	        }else{
+
+	        	retry=1;
+				while (retry) {
+					rc = conduct_write_nb(cons->one, &req, sizeof(req));
+					if (rc == -1 && errno == EWOULDBLOCK) {
+						sched_yield();
+					} else {
+						retry = 0;
+					}
+				}
+	        }
+
+
+            
             if(rc <= 0) {
                 perror("conduct_write");
                 /* Pas de bonne façon de gérer l'erreur sans deadlock. */
