@@ -94,12 +94,14 @@ struct content {
 
 	char isEOF;
 	char isEmpty;
-	volatile atomic_char * buffCircular;
+	//volatile atomic_char * buffCircular;
 	//char *buffCircular;
 };
 
 int conduct_show(struct conduct *c){
 	struct content * ct = (struct content *) c->mmap;
+
+	volatile atomic_char *buffCircular =(volatile atomic_char *) ct + sizeof(struct content);
 
 	char array[(ct->sizeMax) + 1];
 	char array2[(ct->sizeMax) + 1];
@@ -126,7 +128,7 @@ int conduct_show(struct conduct *c){
 	end=ct->end;
 
 	for(int i=0;i<ct->sizeMax;i++){
-		array[i]=ct->buffCircular[i];
+		array[i]=buffCircular[i];
 
 		if(array[i]==0){
 			array[i]='-';
@@ -431,12 +433,13 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	printf("BUFF  -> %p\n",cont->buffCircular);
 	*/
 
-	int decalage=(sizeof(struct content));
-	cont->buffCircular=(volatile atomic_char *)cont + decalage ;
+	//int decalage=(sizeof(struct content));
+	//cont->buffCircular=(volatile atomic_char *)cont + decalage ;
 
+	volatile atomic_char *buffCircular =(volatile atomic_char *) cont + sizeof(struct content);
 	size_t i=0;
 	for(; i<cont->sizeMax;i++){
-		atomic_init(&(cont->buffCircular[i]),0);
+		atomic_init(&(buffCircular[i]),0);
 	}
 
 	if(pthread_mutex_unlock(&cont->mutex)){
@@ -664,6 +667,8 @@ extern inline void apply_loops(struct dataCirularBuffer * data,const struct iove
 	size_t i;
 	char modeRead=0;
 
+
+
 	if(flag==INTERNAL_FLAG_READ){
 		modeRead=1;
 	}
@@ -823,6 +828,8 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	struct content * ct = (struct content *) c->mmap;
 
+	volatile atomic_char *buffCircular =(volatile atomic_char *) ct + sizeof(struct content);
+
 	if (atomic_load(&(ct->isEOF))) {
 		errno = EPIPE;
 		return -1;
@@ -849,7 +856,7 @@ retry_it:
 
 	data.sizeMax=ct->sizeMax;
 	data.sizeAtom=ct->sizeAtom;
-	data.buffCircular=ct->buffCircular;
+	data.buffCircular=buffCircular;
 
 	int needReEval=0;
 
@@ -1005,6 +1012,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 	int retry=0;
 
 	struct content * ct = (struct content *) c->mmap;
+	volatile atomic_char *buffCircular =(volatile atomic_char *) ct + sizeof(struct content);
 
 	/*
 	if ((flag & FLAG_WRITE_EOF) != 0) {
@@ -1050,7 +1058,7 @@ retry_it:
 
 	data.sizeMax=ct->sizeMax;
 	data.sizeAtom=ct->sizeAtom;
-	data.buffCircular=ct->buffCircular;
+	data.buffCircular=buffCircular;
 
 
 	do{

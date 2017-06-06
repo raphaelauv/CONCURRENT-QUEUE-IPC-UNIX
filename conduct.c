@@ -60,7 +60,6 @@ struct content {
 
 	char isEOF;								// Boolean , TRUE -> EOF have been insert in the CircularBuffer
 	char isEmpty;							// Boolean , TRUE -> the CircualarBuffer is Empty and so start == end
-	char *buffCircular;						// Pointer on the CircularBuffer
 };
 
 
@@ -70,6 +69,7 @@ struct content {
 int conduct_show(struct conduct *c){
 	struct content * ct = (struct content *) c->mmap;
 
+	char *buffCircular =(void *) ct + sizeof(struct content);
 	char array[(ct->sizeMax) + 1];
 	char array2[(ct->sizeMax) + 1];
 
@@ -95,7 +95,7 @@ int conduct_show(struct conduct *c){
 	end=ct->end;
 
 	for(int i=0;i<ct->sizeMax;i++){
-		array[i]=ct->buffCircular[i];
+		array[i]=buffCircular[i];
 
 		if(array[i]==0){
 			array[i]='-';
@@ -293,7 +293,10 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 			goto cleanup;
 		}
 
+		
+
 		if (cond->size_mmap >= sb.st_size) {
+			
 			if (ftruncate(fd, cond->size_mmap)) {
 				goto cleanup;
 			}
@@ -326,6 +329,8 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 	}
 
+
+	printf("COND  -> %p\n",cond->mmap);
 	if (close(fd)) {
 		//TODO
 	}
@@ -349,14 +354,14 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	cont->sizeAtom=a;
 	cont->size_mmap=cond->size_mmap;
 
-	/*
-	printf("CONT  -> %p\n",cont);
-	printf("VAR   -> %p\n",&cont->var);
-	printf("BUFF  -> %p\n",cont->buffCircular);
-	*/
+	
+	
 
-	int decalage=(sizeof(struct content));
-	cont->buffCircular=(void *)cont + decalage ;
+
+	//char *buffCircular =(void *) cont + sizeof(struct content);
+
+	//printf("CONT  -> %p\n",cont);
+	//printf("BUFF  -> %p\n",buffCircular);
 
 	if(pthread_mutex_unlock(&cont->mutex)){
 		goto cleanup;
@@ -364,7 +369,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 
 
 	//NOT REALLY NECESSERY
-	msync(cond->mmap,cond->size_mmap,MS_SYNC);//TODO test return value and MS_INVALIDATE  , 
+	msync(cond->mmap,cond->size_mmap,MS_SYNC|MS_INVALIDATE);//TODO test return value and MS_INVALIDATE  , 
 
 	return cond;
 
@@ -421,6 +426,8 @@ struct conduct *conduct_open(const char *name) {
 		//TODO
 	}
 
+	printf("COND  -> %p\n",cond->mmap);
+
 	cont = (struct content *) cond->mmap;
 
 	if (pthread_mutex_lock(&cont->mutex)){
@@ -428,6 +435,11 @@ struct conduct *conduct_open(const char *name) {
 	}
 
 	cond->size_mmap = cont->size_mmap;
+
+	//char *buffCircular =(void *) cont + sizeof(struct content);
+	//printf("CONT  -> %p\n",cont);
+	//printf("BUFF  -> %p\n",buffCircular);
+	//printf("BUFFO  -> %p\n",&buffCircular[0]);
 
 	if (pthread_mutex_unlock(&cont->mutex)) {
 		goto cleanup;
@@ -593,6 +605,8 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 	size_t i;
 	char modeRead=0;
 
+	char *buffCircular =(void *) ct + sizeof(struct content);
+
 	if(flag==INTERNAL_FLAG_READ){
 		modeRead=1;
 	}
@@ -651,19 +665,19 @@ extern inline void apply_loops(struct dataCirularBuffer * data,struct content *c
 
 			if(modeRead){
 				#if MODE_MEMCPY
-				memcpy( &(data->current_iov_base[data->currentIterIOV]),  &(ct->buffCircular[i]),sizeLimit);
+				memcpy( &(data->current_iov_base[data->currentIterIOV]),  &(buffCircular[i]),sizeLimit);
 
 				ct->start+=sizeLimit;
 				#else //NO MEMCPY VERSION
-				data->current_iov_base[data->currentIterIOV]=ct->buffCircular[i];
+				data->current_iov_base[data->currentIterIOV]=buffCircular[i];
 				ct->start++;
 				#endif
 			}else{
 				#if MODE_MEMCPY
-				memcpy( &(ct->buffCircular[i]), &(data->current_iov_base[data->currentIterIOV]),sizeLimit);
+				memcpy( &(buffCircular[i]), &(data->current_iov_base[data->currentIterIOV]),sizeLimit);
 				ct->end+=sizeLimit;
 				#else //NO MEMCPY VERSION
-				ct->buffCircular[i]=data->current_iov_base[data->currentIterIOV];
+				buffCircular[i]=data->current_iov_base[data->currentIterIOV];
 				ct->end++;
 				#endif
 			}

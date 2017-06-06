@@ -3,11 +3,11 @@
 
 
 int main(int argc, char **argv)
-{
+{	
 
-	struct conduct *c = conduct_create("TOTO", 5,20);
+	struct conduct *c ;//= conduct_create("TOTO", 5,20); conduct_close(c);
 	
-	conduct_close(c);
+	
 
 	c=NULL;
 
