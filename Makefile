@@ -16,7 +16,7 @@ SRC_N = conduct.c
 
 OBJ_N = $(SRC_N:.c=.o)
 
-EXEC =  julia test_3thread_depedency test_simple test_vectored_IO
+EXEC =  julia test_3thread_depedency test_simple test_vectored_IO conduct_torture
 
 EXEC_C =  julia_C test_3thread_depedency_C test_simple_C test_vectored_IO_C
 
@@ -39,6 +39,9 @@ test_vectored_IO: $(OBJ_N)  exemple/test_vectored_IO.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_simple	: $(OBJ_N)  exemple/test_simple.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+conduct_torture	: $(OBJ_N)  exemple/conduct_torture.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 

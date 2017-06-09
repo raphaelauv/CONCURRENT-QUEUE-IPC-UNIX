@@ -5,7 +5,7 @@
 
 #include "conduct.h"
 
-#define MODE_MEMCPY 0						// TRUE -> use memcpy standard C library function else it don't
+#define MODE_MEMCPY 1						// TRUE -> use memcpy standard C library function else it don't
 
 #define FILE_mode 0666						// FILE mode opening
 #define FLAG_CLEAN_DESTROY 1
@@ -169,9 +169,9 @@ extern inline int init_Content(struct content * cont) {
 	result+=pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
 	result+=pthread_mutex_init(&cont->mutex, &mutexAttr);
 
-	result+=pthread_mutexattr_destroy(&mutexAttr);
-	result+=pthread_condattr_destroy(&condAttrRead);
-	result+=pthread_condattr_destroy(&condAttrWrite);
+	//result+=pthread_mutexattr_destroy(&mutexAttr);
+	//result+=pthread_condattr_destroy(&condAttrRead);
+	//result+=pthread_condattr_destroy(&condAttrWrite);
 
 	return result;
 
@@ -322,7 +322,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	} else {
 
 
-		cond->mmap = mmap( NULL, cond->size_mmap, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+		cond->mmap = mmap( NULL, cond->size_mmap, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 		if (cond->mmap == MAP_FAILED) {
 			goto cleanup;
 		}
@@ -330,7 +330,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c) {
 	}
 
 
-	printf("COND  -> %p\n",cond->mmap);
+	//printf("COND  -> %p\n",cond->mmap);
 	if (close(fd)) {
 		//TODO
 	}
@@ -426,7 +426,7 @@ struct conduct *conduct_open(const char *name) {
 		//TODO
 	}
 
-	printf("COND  -> %p\n",cond->mmap);
+	//printf("COND  -> %p\n",cond->mmap);
 
 	cont = (struct content *) cond->mmap;
 
@@ -704,11 +704,14 @@ extern inline ssize_t conduct_read_v_flag(struct conduct *c,const struct iovec *
 
 	struct content * ct = (struct content *) c->mmap;
 
-	
+	/*
 	if (atomic_load(&(ct->isEOF))) {
-		errno = EPIPE;
-		return -1;
+		if (atomic_load(&(ct->isEmpty))) {
+			return 0;
+		}
 	}
+	*/
+
 
 	struct dataCirularBuffer data = { 0 };
 	if(init_dataCirularBuffer(&data,c,iov,iovcnt)){
@@ -741,7 +744,8 @@ retry_it:
 	int needReEval=0;
 
 	do{
-		if(ct->isEOF) {
+		if(ct->isEOF && ct->isEmpty) {
+
 			if(pthread_mutex_unlock(&ct->mutex)){
 				return -1;
 			}
@@ -749,19 +753,23 @@ retry_it:
 			if (retry) {
 				errno=0;
 				return data.sizeReallyManipulate;
+			}else{
+				return 0;
 			}
-
-			errno = EPIPE;
-			return -1;
+			
 		}
-
+		//printf("is empty ? %d\n",ct->isEmpty);
 		eval_size_to_manipulate(ct,&data);
+
 		eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
+
 		if (data.sizeToManipulate > data.sizeAvailable) {
 			data.sizeToManipulate = data.sizeAvailable;
 			eval_position_and_size_of_data(ct,&data,INTERNAL_FLAG_READ);
 		}
+		//printf("SIZE TO MANIPULATE %d\n",data.sizeToManipulate);
 
+		
 		if (ct->isEmpty) {
 
 			if (retry) {
@@ -780,6 +788,8 @@ retry_it:
 				errno=EWOULDBLOCK;
 				return -1; //ou 0
 			}else{
+
+				//printf("goo sleep \n");
 				if (pthread_cond_wait(&ct->conditionRead, &ct->mutex)) {
 					pthread_mutex_unlock(&ct->mutex);
 					return -1;
@@ -791,7 +801,7 @@ retry_it:
 			needReEval=0;
 		}
 
-	}while(ct->isEOF || ct->isEmpty || needReEval);
+	}while((ct->isEOF && ct->isEmpty) || ct->isEmpty || needReEval);
 
 
 
@@ -839,8 +849,7 @@ extern inline ssize_t conduct_write_v_flag(struct conduct *c,const struct iovec 
 	*/
 
 	if (atomic_load(&(ct->isEOF))) {
-		errno = EPIPE;
-		return -1;
+		return 0;
 	}
 
 
@@ -875,10 +884,15 @@ retry_it:
 	
 	if ((flag & FLAG_WRITE_EOF) !=0 ) {
 		ct->isEOF = 1;
+
+		if(pthread_cond_signal(&ct->conditionRead)){
+			return -1;
+		}
+
 		if(pthread_mutex_unlock(&ct->mutex)){
 			return -1;
 		}
-		return 0;
+		return 1;
 	}
 
 	do{
@@ -934,15 +948,21 @@ retry_it:
 	apply_loops(&data,ct,iov,INTERNAL_FLAG_WRITE);
 
 	if(data.sizeReallyManipulate>0){
+		//printf("n'est plus vide \n");
 		ct->isEmpty=0;
 	}
-
 	if(pthread_cond_signal(&ct->conditionRead)){
 		return -1;
 	}
+
 	if(pthread_mutex_unlock(&ct->mutex)){
 		return -1;
 	}
+
+	
+	//printf("signal read \n");
+
+	
 
 	if (data.sizeReallyManipulate < data.count) {
 		retry = 1;
@@ -984,8 +1004,8 @@ int conduct_write_eof_FLAG(struct conduct *c,unsigned char flag) {
 
 	result = conduct_write_v_flag(c,&iov,1,FLAG_WRITE_EOF | flag);
 
-	if ((result == -1 && errno == EPIPE) || result == 1) {
-		return 0; //EOF is already write , or just been write
+	if (result == -1) {
+		return result;
 	}
 	return result;
 }

@@ -13,7 +13,7 @@
 #define QSIZE 100
 #define COUNT 100
 
-#define MODE_FILE 1
+#define MODE_FILE 0
 
 #define MODE_BLOCK 1
 

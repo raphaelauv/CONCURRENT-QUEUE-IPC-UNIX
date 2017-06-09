@@ -23,10 +23,11 @@
 
 
 #define COUNT 10
-#define QSIZE 100
+#define QSIZE 1000000
 #define MODE_COND 1
 #define MODE_PIPE 0
 #define MODE_SOCKET 0
+#define MODE_B 1
 
 
 //int valueTotest =10;
@@ -100,15 +101,20 @@ static void * result_thread(void *arg){
         int rc;
 
 		if (MODE_COND) {
-
-			retry=1;
-			while (retry) {
-				rc = conduct_read_nb(cons.two, &rep, sizeof(rep));
-				if (rc == -1 && errno == EWOULDBLOCK) {
-					sched_yield();
-				} else {
-					retry = 0;
+			
+			if(MODE_B){
+				rc = conduct_read(cons.two, &rep, sizeof(rep));	
+			}else{
+				retry=1;
+				while (retry) {
+						rc = conduct_read_nb(cons.two, &rep, sizeof(rep));
+						if (rc == -1 && errno == EWOULDBLOCK) {
+							sched_yield();
+						} else {
+							retry = 0;
+					}
 				}
+
 			}
 
 		} else if (MODE_PIPE) {
@@ -179,14 +185,19 @@ static void * order_thread(void *arg){
 
 		if (MODE_COND) {
 
+			if(MODE_B){
+				rc = conduct_write(cons.one, &req, sizeof(req));
+			}else{
 
-			retry=1;
-			while (retry) {
-				rc = conduct_write_nb(cons.one, &req, sizeof(req));
-				if (rc == -1 && errno == EWOULDBLOCK) {
-					sched_yield();
-				} else {
-					retry = 0;
+
+				retry=1;
+				while (retry) {
+					rc = conduct_write_nb(cons.one, &req, sizeof(req));
+					if (rc == -1 && errno == EWOULDBLOCK) {
+						sched_yield();
+					} else {
+						retry = 0;
+					}
 				}
 			}
 
@@ -245,13 +256,18 @@ static void * worker_thread(void *arg)
 		if (MODE_COND) {
 
 			retry=1;
+			if(MODE_B){
+				rc = conduct_read(cons.one, &req, sizeof(req));
+			}else{	
 
-			while (retry) {
-				rc = conduct_read_nb(cons.one, &req, sizeof(req));
-				if (rc == -1 && errno == EWOULDBLOCK) {
-					sched_yield();
-				} else {
-					retry = 0;
+
+				while (retry) {
+					rc = conduct_read_nb(cons.one, &req, sizeof(req));
+					if (rc == -1 && errno == EWOULDBLOCK) {
+						sched_yield();
+					} else {
+						retry = 0;
+					}
 				}
 			}
 
@@ -282,16 +298,20 @@ static void * worker_thread(void *arg)
 
 
 		if (MODE_COND) {
+			if(MODE_B){
+				rc = conduct_write(cons.two, &rep, sizeof(rep));
+			}else{
 
-			int retry=1;
-			while(retry){
-				rc = conduct_write_nb(cons.two, &rep, sizeof(rep));
-				if(rc==-1 && errno==EWOULDBLOCK){
-					sched_yield();
-				}else if(rc==-1){
-					printf("ERRNO PAS A EWOULD\n");
-				}else{
-					retry=0;
+				int retry=1;
+				while(retry){
+					rc = conduct_write_nb(cons.two, &rep, sizeof(rep));
+					if(rc==-1 && errno==EWOULDBLOCK){
+						sched_yield();
+					}else if(rc==-1){
+						printf("ERRNO PAS A EWOULD\n");
+					}else{
+						retry=0;
+					}
 				}
 			}
 
