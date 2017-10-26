@@ -1,6 +1,8 @@
 # IPC -> INTER-PROCESSUS COMMUNICATIONS
 
-POSIX mqueue.h is an exemple of implementation
+all details in the PDF file : Rapport Projet System M1.pdf
+
+a popular exemple of POSIX IPC is -> mqueue.h 
 
 ## ATOMIC CIRCULAR-BUFFER Message queue IMPLEMENTATIONS (UNIX)
 
