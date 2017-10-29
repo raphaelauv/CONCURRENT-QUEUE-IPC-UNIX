@@ -1,6 +1,6 @@
 # IPC -> INTER-PROCESSUS COMMUNICATIONS
 
-all details in the PDF file : Rapport Projet System M1.pdf
+all details and benchmark in the PDF file : Rapport Projet System M1.pdf
 
 a popular exemple of POSIX IPC is -> mqueue.h 
 
@@ -76,6 +76,10 @@ a popular exemple of POSIX IPC is -> mqueue.h
 strace -c -f ./julia
 time ./julia
 
+## Benchmark
 
+more details in the PDF file
+
+<img src="https://user-images.githubusercontent.com/10202690/32146361-8dc31e6e-bcd6-11e7-9453-fc0b2dd2bf85.png" alt="alt text" width="700" height="whatever">
 
 
